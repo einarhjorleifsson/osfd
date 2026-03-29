@@ -14,12 +14,13 @@ URL: https://github.com/einarhjorleifsson/osfd
 BugReports: https://github.com/einarhjorleifsson/osfd/issues
 Imports:
     dplyr,
-    lubridate
+    icesVocab,
+    lubridate,
+    sf
 Suggests:
     duckdbfs,
     icesConnect,
     icesVMS,
-    icesVocab,
     knitr,
     rmarkdown,
     sfdSAR,

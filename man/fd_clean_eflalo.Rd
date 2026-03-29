@@ -25,11 +25,9 @@ Checks that the required vessel, trip, and catch columns are present in an
 EFLALO data frame, then gets the types right so nothing downstream has to
 guess: numeric columns are coerced to numeric; \code{FT_DDATIM} and \code{FT_LDATIM}
 are constructed from the raw date/time string columns; and \code{LE_CDAT} is
-parsed from \code{"DD/MM/YYYY"} to Date. Call this before \code{\link[=fd_eflalo_checks]{fd_eflalo_checks()}}.
+parsed from \code{"DD/MM/YYYY"} to Date.
 
-Value-level sanity checks (missing vessel lengths, implausible engine power,
-etc.) live in \code{\link[=fd_eflalo_checks]{fd_eflalo_checks()}} — this function only concerns itself with
-structure and type.
+This function only concerns itself with structure and type.
 }
 \examples{
 \dontrun{

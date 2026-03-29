@@ -61,11 +61,9 @@ fd_clean_tacsat <- function(tacsat, remove = TRUE) {
 #' EFLALO data frame, then gets the types right so nothing downstream has to
 #' guess: numeric columns are coerced to numeric; `FT_DDATIM` and `FT_LDATIM`
 #' are constructed from the raw date/time string columns; and `LE_CDAT` is
-#' parsed from `"DD/MM/YYYY"` to Date. Call this before [fd_eflalo_checks()].
+#' parsed from `"DD/MM/YYYY"` to Date.
 #'
-#' Value-level sanity checks (missing vessel lengths, implausible engine power,
-#' etc.) live in [fd_eflalo_checks()] — this function only concerns itself with
-#' structure and type.
+#' This function only concerns itself with structure and type.
 #'
 #' @param eflalo A data frame in EFLALO format.
 #' @param remove Logical. If `TRUE` (default), the raw date/time columns
@@ -107,12 +105,12 @@ fd_clean_eflalo <- function(eflalo, remove = TRUE) {
 
   if (!"FT_DDATIM" %in% names(eflalo))
     eflalo <- eflalo |>
-      dplyr::mutate(FT_DDATIM = lubridate::dmy_hm(paste(FT_DDAT, FT_DTIME), tz = "UTC"),
+      dplyr::mutate(FT_DDATIM = lubridate::dmy_hms(paste(FT_DDAT, FT_DTIME), tz = "UTC"),
                     .before = FT_DDAT)
 
   if (!"FT_LDATIM" %in% names(eflalo))
     eflalo <- eflalo |>
-      dplyr::mutate(FT_LDATIM = lubridate::dmy_hm(paste(FT_LDAT, FT_LTIME),  tz = "UTC"),
+      dplyr::mutate(FT_LDATIM = lubridate::dmy_hms(paste(FT_LDAT, FT_LTIME),  tz = "UTC"),
                     .before = FT_LDAT)
 
   if (remove)

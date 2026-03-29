@@ -50,40 +50,41 @@ The package ships with demo `eflalo` and `tacsat` datasets. A sketch of the
 full pipeline:
 
 ```{r example, eval = FALSE}
+library(duckdbfs)
+library(nanoparquet)
 library(osfd)
 library(dplyr)
+library(stringr)
 library(lubridate)
 
-# --- Write demo data to disk (rds, one file per year) ------------------------
+# --- Write demo data to disk (parquet, one file per year) ---------------------
 osfd::eflalo |>
-  mutate(year = year(dmy(FT_DDAT))) |>
-  fd_write_dataset("data-raw/eflalo", year_col = "year", name = "eflalo")
-
+  mutate(year = as.integer(year(dmy(FT_DDAT)))) |> 
+  group_by(year) |> 
+  write_dataset("_garbage/eflalo")
 osfd::tacsat |>
-  mutate(year = year(dmy(SI_DATE))) |>
-  fd_write_dataset("data-raw/tacsat", year_col = "year", name = "tacsat")
-
-# Parquet is also supported (requires the duckdbfs package):
-# fd_write_dataset(..., format = "parquet")
+  mutate(year = as.integer(year(dmy(SI_DATE)))) |> 
+  group_by(year) |> 
+  write_dataset("_garbage/tacsat")
 
 # --- Preprocessing -----------------------------------------------------------
-eflalo <- fd_read_dataset("data-raw/eflalo", years = 1803, name = "eflalo")
-tacsat <- fd_read_dataset("data-raw/tacsat", years = 1803, name = "tacsat")
+eflalo <- read_parquet("_garbage/eflalo/year=1803/data_0.parquet")
+tacsat <- read_parquet("_garbage/tacsat/year=1803/data_0.parquet")
 
 # Coerce columns and parse datetimes
-eflalo <- fd_eflalo_clean(eflalo)
-tacsat <- fd_tacsat_clean(tacsat)
+eflalo <- fd_clean_eflalo(eflalo)
+tacsat <- fd_clean_tacsat(tacsat)
 
 # Single-pass QC (adds a `checks` column; caller decides what to filter)
-eflalo <- fd_eflalo_checks(eflalo, iv_gear = NULL, iv_met6 = NULL, year = 1803)
-eflalo |> count(checks)
-eflalo <- filter(eflalo, checks == "10 no vessel tonnage") |> select(-checks)
-
-# question here if checking interval is not premature
-## Currently does not check if points on land (checked via ices_area)
-tacsat <- fd_tacsat_checks(tacsat, it_min = 300)
+tacsat <- fd_check_tacsat(tacsat, it_min = 300)
 tacsat |> count(checks)
-tacsat <- filter(tacsat, checks == "ok") |> select(-checks, -INTV)
+tacsat <- tacsat |> filter(checks == "ok") |> select(-checks)
+
+# Single-pass QC (adds a `checks` column; caller decides what to filter)
+eflalo <- fd_eflalo_check(eflalo, year = 1803)
+eflalo |> count(checks)
+eflalo <- eflalo |> filter(str_starts(checks, "ok - no vessel tonnage")) |> select(-checks)
+
 
 # --- Analysis ----------------------------------------------------------------
 # Assign trip identifiers (and vessel attributes) to pings

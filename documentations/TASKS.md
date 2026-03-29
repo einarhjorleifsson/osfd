@@ -18,13 +18,13 @@ This document lists (past and future) tasks
 
 ## 2. Preprocessing
 
-### 2.1 Data checks and tidying
+### 2.1 Data cleaning and tidying
 
 * Check that all variables are available and that type is correctly setup
 * Here any separate date and time variables are merged into a single datetime-variable
   * The older variables are removed by default
 
-### 2.2 Clean TACSAT data (1.2)
+### 2.2 Check TACSAT data (1.2)
 
 Create a function osfd::fd_clean_tacsat
 
@@ -42,7 +42,7 @@ Create a function osfd::fd_clean_tacsat
   * The tacsat objects needs to be sf
 * 
 
-### 2.3 Clean EFLALO data (1.3)
+### 2.3 Check EFLALO data (1.3)
 
 Create a function osfd::fd_clean_eflalo
 
@@ -50,7 +50,7 @@ Create a function osfd::fd_clean_eflalo
   * This is done within the function
 * Warn for outlying catch records (1.3.2)
   * Currently a question how to implement this - leave it for now but include a numerical values within the function.
-* Remove non-unique trip numbers (1.3.3)
+* Remove non-unique ~~trip~~ event numbers (1.3.3)
 * Remove impossible time stamp records (1.3.4)
 * Remove trips starting before 1st Jan (1.3.5)
   * If analysis done outside a year loop, this may not be needed

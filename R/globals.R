@@ -3,6 +3,7 @@
 utils::globalVariables(c(
   "FT_DDAT", "FT_DDATIM", "FT_DTIME", "FT_LDAT", "FT_LDATIM", "FT_LTIME",
   "FT_REF", "LE_CDAT", "SI_DATE", "SI_DATIM", "SI_TIME", "VE_COU", "VE_KW",
-  "VE_LEN", "VE_REF", "VE_TON"
+  "VE_LEN", "VE_REF", "VE_TON",
+  ".in", ".in_harbour", ".intv", "harbours", "ices_areas"
   ))
 
