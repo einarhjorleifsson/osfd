@@ -1,0 +1,142 @@
+---
+output: github_document
+---
+
+<!-- README.md is generated from README.Rmd. Please edit that file -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  fig.path = "man/figures/README-",
+  out.width = "100%"
+)
+```
+
+# osfd
+
+<!-- badges: start -->
+<!-- badges: end -->
+
+{**osfd**} (or: "oh yet another, spatial fisheries data package") consolidates
+the ICES WGSFD VMS and logbook datacall workflow into a properly documented,
+testable package. A junk drawer, finally organised into labelled boxes — and
+then organised again, because the first attempt was also a junk drawer.
+
+All exported functions carry an `fd_` prefix (fisheries data, or fishy data —
+you decide). The package covers the full preprocessing and analysis pipeline:
+QC and cleaning (Phase 2), trip linking, activity classification, landings
+distribution, swept area, and effort enrichment (Phase 3).
+
+## Installation
+
+```r
+# install.packages("pak")
+pak::pak("einarhjorleifsson/osfd")
+```
+
+Some dependencies are not on CRAN and come from the ICES r-universe:
+
+```r
+install.packages(
+  c("sfdSAR", "icesVMS", "icesVocab", "icesConnect"),
+  repos = "https://ices-tools-prod.r-universe.dev"
+)
+```
+
+## Quick start
+
+The package ships with demo `eflalo` and `tacsat` datasets. A sketch of the
+full pipeline:
+
+```{r example, eval = FALSE}
+library(osfd)
+library(dplyr)
+library(lubridate)
+
+# --- Write demo data to disk (rds, one file per year) ------------------------
+osfd::eflalo |>
+  mutate(year = year(dmy(FT_DDAT))) |>
+  fd_write_dataset("data-raw/eflalo", year_col = "year", name = "eflalo")
+
+osfd::tacsat |>
+  mutate(year = year(dmy(SI_DATE))) |>
+  fd_write_dataset("data-raw/tacsat", year_col = "year", name = "tacsat")
+
+# Parquet is also supported (requires the duckdbfs package):
+# fd_write_dataset(..., format = "parquet")
+
+# --- Preprocessing -----------------------------------------------------------
+eflalo <- fd_read_dataset("data-raw/eflalo", years = 1803, name = "eflalo")
+tacsat <- fd_read_dataset("data-raw/tacsat", years = 1803, name = "tacsat")
+
+# Coerce columns and parse datetimes
+eflalo <- fd_eflalo_clean(eflalo)
+tacsat <- fd_tacsat_clean(tacsat)
+
+# Single-pass QC (adds a `checks` column; caller decides what to filter)
+eflalo <- fd_eflalo_checks(eflalo, iv_gear = NULL, iv_met6 = NULL, year = 1803)
+eflalo |> count(checks)
+eflalo <- filter(eflalo, checks == "10 no vessel tonnage") |> select(-checks)
+
+# question here if checking interval is not premature
+## Currently does not check if points on land (checked via ices_area)
+tacsat <- fd_tacsat_checks(tacsat, it_min = 300)
+tacsat |> count(checks)
+tacsat <- filter(tacsat, checks == "ok") |> select(-checks, -INTV)
+
+# --- Analysis ----------------------------------------------------------------
+# Assign trip identifiers (and vessel attributes) to pings
+tacsatp <- fd_assign_tripid(tacsat, eflalo)
+
+# Calculate ping intervals and classify fishing activity
+tacsatp <- fd_intv_tacsat(tacsatp, level = "trip", fill.na = TRUE)
+
+# TODO: Set the ping states (fishing or not)
+# ...
+
+# Distribute landings among fishing pings
+tacsatEflalo <- fd_split_pings(tacsatp, eflalo)
+
+# Gear width and swept area
+tacsatEflalo$GEARWIDTHKM <- fd_gearwidth(tacsatEflalo)
+tacsatEflalo$SA_KM2 <- fd_swept_area(
+  gear          = tacsatEflalo$LE_GEAR,
+  fishing_hours = tacsatEflalo$INTV / 60,
+  gear_width    = tacsatEflalo$GEARWIDTHKM,
+  fishing_speed = tacsatEflalo$SI_SP
+)
+```
+
+## Datacall flow
+
+This preliminarily placed here, just a bookkeeping of the current datacall flow with comments if not yet implemented in {osfd}
+
+### Preprocessing
+
+#### tacsat
+
+* 1.2.1 Remove VMS pings outside the ICES areas
+  * This can be an expensive process if ais data is rich, because dataframe turned to sf, then a join with ices-area shapefile but then geometry is droppped. Question for now is if this can be moved more downstream, where other spatial acrobatics take place.
+  * NOTE: Not yet implemented in {osfd}
+* 1.2.2 Remove duplicate records - in osfd::fd_tacsat_check
+* 1.2.3 Remove points that have impossible coordinates
+  * this is a redundant step, given 1.2.1 above
+* 1.2.4 Remove points which are pseudo duplicates as they have an interval rate < x minutes - in osdf:fd_tacsat_check
+  * the check function has accepts the minimum interval
+* 1.2.5 Remove points in harbour
+  
+
+
+
+## Source
+
+Functions are ported from
+[ICES-VMS-and-Logbook-Data-Call](https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call)
+scripts `0_global.R`, `1_eflalo_tacsat_preprocessing.R`, and
+`2_eflalo_tacsat_analysis.R`. Modernised script versions using `osfd` functions
+are in `inst/scripts/`.
+
+## License
+
+CC BY 4.0

@@ -1,0 +1,37 @@
+Package: osfd
+Title: Spatial Fisheries Data Tools
+Version: 0.0.0.9000
+Authors@R:
+    person("Einar", "Hjorleifsson", , "einar.hjorleifsson@gmail.com", role = c("aut", "cre"))
+Description: A consolidation of functions used in the ICES WGSFD VMS and logbook
+    data call workflow. Think of this as the junk drawer of spatial fisheries data
+    processing — except organised, documented, and unlikely to fall on your foot.
+License: CC BY 4.0
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.3
+URL: https://github.com/einarhjorleifsson/osfd
+BugReports: https://github.com/einarhjorleifsson/osfd/issues
+Imports:
+    dplyr
+VignetteBuilder: knitr
+Suggests:
+    duckdbfs,
+    icesConnect,
+    icesVMS,
+    icesVocab,
+    knitr,
+    rmarkdown,
+    sfdSAR,
+    testthat (>= 3.0.0),
+    vmstools
+Remotes:
+    ices-tools-prod/r-universe::sfdSAR,
+    ices-tools-prod/r-universe::icesVMS,
+    ices-tools-prod/r-universe::icesVocab,
+    ices-tools-prod/r-universe::icesConnect
+Config/testthat/edition: 3
+Depends: 
+    R (>= 3.5)
+LazyData: true
+LazyDataCompression: xz
