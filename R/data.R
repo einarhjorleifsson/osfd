@@ -17,9 +17,7 @@
 #' }
 #'
 #' Dates and times are stored as character strings in the original EFLALO2
-#' format (`DD/MM/YYYY` and `HH:MM`). Use `fd_clean_eflalo()` to coerce
-#' columns to appropriate types and `fd_to_datetime()` to parse combined
-#' departure / arrival datetimes.
+#' format (`DD/MM/YYYY` and `HH:MM`).
 #'
 #' @format A data frame with 4,539 rows and 189 variables.
 #'
@@ -87,7 +85,6 @@
 #' Contact: Niels T. Hintzen \email{niels.hintzen@@wur.nl}.
 #' Modified for `osfd` via `data-raw/DATASET_vnstools.R`.
 #'
-#' @seealso [tacsat], [fd_eflalo_clean()], [fd_eflalo_checks()]
 "eflalo"
 
 
@@ -105,8 +102,7 @@
 #' calculations.
 #'
 #' Date and time are stored as character strings (`SI_DATE` as `DD/MM/YYYY`,
-#' `SI_TIME` as `HH:MM`). Use `fd_tacsat_clean()` to coerce columns and parse
-#' `SI_DATIM` (a combined POSIXct datetime).
+#' `SI_TIME` as `HH:MM`).
 #'
 #' @format A data frame with 97,015 rows and 8 variables:
 #' \describe{
@@ -132,7 +128,6 @@
 #' Contact: Niels T. Hintzen \email{niels.hintzen@@wur.nl}.
 #' Modified for `osfd` via `data-raw/DATASET_vnstools.R`.
 #'
-#' @seealso [eflalo], [fd_tacsat_clean()], [fd_tacsat_checks()]
 "tacsat"
 
 
@@ -140,7 +135,7 @@
 #'
 #' @description
 #' European harbour locations, for use
-#' in filtering of VMS pings near port (see [fd_filter_harbour()]).
+#' in filtering of VMS pings near port.
 #' Derived from the `harbours` dataset in the `vmstools` package.
 #'
 #' @format An `sf` data frame with 3,839 rows and 5 variables:
@@ -154,7 +149,6 @@
 #' @source
 #' `vmstools` R package. Processed for `osfd` via `data-raw/DATASET_vnstools.R`.
 #'
-#' @seealso [fd_harbours_sf()], [fd_filter_harbour()]
 "harbours"
 
 
@@ -162,8 +156,8 @@
 #'
 #' @description
 #' Polygons for ICES statistical areas in the North-East Atlantic (FAO Major
-#' Area 27), used for spatial filtering of VMS data to the area of interest
-#' (see [fd_filter_ices_area()]). Derived from the `ICESareas` dataset in the
+#' Area 27), used for spatial filtering of VMS data to the area of interest.
+#' Derived from the `ICESareas` dataset in the
 #' `vmstools` package, with invalid geometries repaired via
 #' `sf::st_make_valid()`.
 #'
@@ -184,7 +178,6 @@
 #'
 #' @source
 #' `vmstools` R package (`ICESareas`). Processed for `osfd` via
-#' `data-raw/DATASET_vnstools.R`.
+#' `data-raw/DATASET_vmstools.R`.
 #'
-#' @seealso [fd_filter_ices_area()]
 "ices_areas"

@@ -84,9 +84,7 @@ datacall column naming convention.
 }
 
 Dates and times are stored as character strings in the original EFLALO2
-format (\code{DD/MM/YYYY} and \code{HH:MM}). Use \code{fd_clean_eflalo()} to coerce
-columns to appropriate types and \code{fd_to_datetime()} to parse combined
-departure / arrival datetimes.
+format (\code{DD/MM/YYYY} and \code{HH:MM}).
 }
 \note{
 This dataset is provided for example and testing purposes only. It is
@@ -94,8 +92,5 @@ derived from the \code{vmstools} package, where it is described as: \emph{"Witho
 prior permission of the authors it is not allowed to use this data other
 than for example non-publishable purposes."} The original data are of
 disguised origin and do not represent real fishing activity.
-}
-\seealso{
-\link{tacsat}, \code{\link[=fd_eflalo_clean]{fd_eflalo_clean()}}, \code{\link[=fd_eflalo_checks]{fd_eflalo_checks()}}
 }
 \keyword{datasets}

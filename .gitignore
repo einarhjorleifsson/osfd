@@ -5,3 +5,8 @@
 .DS_Store
 .quarto
 .positai
+
+osfd.Rproj
+
+*.html
+_garbage

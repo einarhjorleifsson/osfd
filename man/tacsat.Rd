@@ -37,8 +37,7 @@ Gregorian leap year, which caused silent errors in date-difference
 calculations.
 
 Date and time are stored as character strings (\code{SI_DATE} as \code{DD/MM/YYYY},
-\code{SI_TIME} as \code{HH:MM}). Use \code{fd_tacsat_clean()} to coerce columns and parse
-\code{SI_DATIM} (a combined POSIXct datetime).
+\code{SI_TIME} as \code{HH:MM}).
 }
 \note{
 This dataset is provided for example and testing purposes only. It is
@@ -46,8 +45,5 @@ derived from the \code{vmstools} package, where it is described as: \emph{"Witho
 prior permission of the authors it is not allowed to use this data other
 than for example non-publishable purposes."} The original data are of
 disguised origin and do not represent real fishing activity.
-}
-\seealso{
-\link{eflalo}, \code{\link[=fd_tacsat_clean]{fd_tacsat_clean()}}, \code{\link[=fd_tacsat_checks]{fd_tacsat_checks()}}
 }
 \keyword{datasets}

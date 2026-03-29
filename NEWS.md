@@ -1,4 +1,4 @@
-# osfd (development version)
+# osfd 0.0.0.9000
 
 ## Data
 
@@ -8,3 +8,7 @@
 - Added harbours dataset, derived from `vmstools::harbours`
 - Binary data files tracked with Git LFS
 
+## Data preprocessing
+
+- Added data checks for required variables and column types in `tacsat` and `eflalo`
+- Date and time fields are now merged into a single `datetime` variable; source columns removed by default (Task 2.1)

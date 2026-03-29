@@ -22,19 +22,16 @@ An \code{sf} data frame with 66 rows and 11 variables:
 }
 \source{
 \code{vmstools} R package (\code{ICESareas}). Processed for \code{osfd} via
-\code{data-raw/DATASET_vnstools.R}.
+\code{data-raw/DATASET_vmstools.R}.
 }
 \usage{
 ices_areas
 }
 \description{
 Polygons for ICES statistical areas in the North-East Atlantic (FAO Major
-Area 27), used for spatial filtering of VMS data to the area of interest
-(see \code{\link[=fd_filter_ices_area]{fd_filter_ices_area()}}). Derived from the \code{ICESareas} dataset in the
+Area 27), used for spatial filtering of VMS data to the area of interest.
+Derived from the \code{ICESareas} dataset in the
 \code{vmstools} package, with invalid geometries repaired via
 \code{sf::st_make_valid()}.
-}
-\seealso{
-\code{\link[=fd_filter_ices_area]{fd_filter_ices_area()}}
 }
 \keyword{datasets}

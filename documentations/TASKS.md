@@ -14,13 +14,17 @@ This document lists (past and future) tasks
 
 * The datasets should be lfs in the git
 
-## 1.2 Create convenient read and write functions
-
-* Create a write and read function
+~~## 1.2 Create convenient read and write functions~~
 
 ## 2. Preprocessing
 
-### 2.1 Clean TACSAT data (1.2)
+### 2.1 Data checks and tidying
+
+* Check that all variables are available and that type is correctly setup
+* Here any separate date and time variables are merged into a single datetime-variable
+  * The older variables are removed by default
+
+### 2.2 Clean TACSAT data (1.2)
 
 Create a function osfd::fd_clean_tacsat
 
@@ -38,7 +42,7 @@ Create a function osfd::fd_clean_tacsat
   * The tacsat objects needs to be sf
 * 
 
-### 2.2 Clean EFLALO data (1.3)
+### 2.3 Clean EFLALO data (1.3)
 
 Create a function osfd::fd_clean_eflalo
 
@@ -53,7 +57,7 @@ Create a function osfd::fd_clean_eflalo
 * Remove records with arrival date before departure date (1.3.6)
 * Remove trip with overlap with another trip (1.3.7)
 
-### 2.3 EFLALO QC - vocabulary checks (1.4)
+### 2.4 EFLALO QC - vocabulary checks (1.4)
 
 Create function osfd::df_qc_eflalo
 

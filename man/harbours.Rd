@@ -21,10 +21,7 @@ harbours
 }
 \description{
 European harbour locations, for use
-in filtering of VMS pings near port (see \code{\link[=fd_filter_harbour]{fd_filter_harbour()}}).
+in filtering of VMS pings near port.
 Derived from the \code{harbours} dataset in the \code{vmstools} package.
-}
-\seealso{
-\code{\link[=fd_harbours_sf]{fd_harbours_sf()}}, \code{\link[=fd_filter_harbour]{fd_filter_harbour()}}
 }
 \keyword{datasets}
