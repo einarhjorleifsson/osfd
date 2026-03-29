@@ -40,7 +40,6 @@ Create a function osfd::fd_clean_tacsat
   * the check function has accepts the minimum interval
 * Remove points in harbour (1.2.5)
   * The tacsat objects needs to be sf
-* 
 
 ### 2.3 Check EFLALO data (1.3)
 
@@ -58,8 +57,6 @@ Create a function osfd::fd_clean_eflalo
 * Remove trip with overlap with another trip (1.3.7)
 
 ### 2.4 EFLALO QC - vocabulary checks (1.4)
-
-Create function osfd::df_qc_eflalo
 
 * Check Metier L4 (Gear) categories are accepted (1.4.1)
 * Check Metier L6 (Fishing Activity) categories are accepted (3.5.5)

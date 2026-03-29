@@ -31,11 +31,11 @@
 #'
 #' @examples
 #' \dontrun{
-#' tacsat <- fd_clean_tacsat(tacsat)
+#' tacsat <- fd_setup_tacsat(tacsat)
 #' }
 #'
 #' @export
-fd_clean_tacsat <- function(tacsat, remove = TRUE) {
+fd_setup_tacsat <- function(tacsat, remove = TRUE) {
   required_cols <- c("VE_COU", "VE_REF", "SI_DATE", "SI_TIME",
                      "SI_LATI", "SI_LONG", "SI_SP", "SI_HE")
   missing <- required_cols[!required_cols %in% names(tacsat)]
@@ -78,12 +78,12 @@ fd_clean_tacsat <- function(tacsat, remove = TRUE) {
 #'
 #' @examples
 #' \dontrun{
-#' eflalo <- fd_clean_eflalo(eflalo)
-#' eflalo <- fd_clean_eflalo(eflalo, remove = FALSE) # keep the raw columns
+#' eflalo <- fd_setup_eflalo(eflalo)
+#' eflalo <- fd_setup_eflalo(eflalo, remove = FALSE) # keep the raw columns
 #' }
 #'
 #' @export
-fd_clean_eflalo <- function(eflalo, remove = TRUE) {
+fd_setup_eflalo <- function(eflalo, remove = TRUE) {
   required_cols <- c(
     "VE_KW", "VE_LEN", "VE_TON", "LE_MSZ",
     "FT_DDAT", "FT_DTIME", "FT_LDAT", "FT_LTIME"
@@ -115,6 +115,10 @@ fd_clean_eflalo <- function(eflalo, remove = TRUE) {
 
   if (remove)
     eflalo <- dplyr::select(eflalo, -c(FT_DDAT, FT_DTIME, FT_LDAT, FT_LTIME))
+
+  eflalo <-
+    eflalo |>
+    dplyr::arrange(VE_COU, VE_REF, FT_DDATIM, FT_LDATIM, LE_CDAT)
 
   return(eflalo)
 }
