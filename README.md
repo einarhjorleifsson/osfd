@@ -92,10 +92,9 @@ eflalo_classic |> count(.checks, name = "records") |> knitr::kable(caption = "Ef
 | 03 new years trip              |      54 |
 | 04 departure after arrival     |      17 |
 | 06 overlapping trips           |     143 |
-| 08 metier 6 invalid            |     234 |
 | 09 catch date before departure |      33 |
 | 10 catch date after arrival    |     422 |
-| ok                             |    8971 |
+| ok                             |    9205 |
 
 Eflalo QC: Data checks
 
@@ -109,9 +108,9 @@ trips |> count(.tchecks, name = "trips") |> knitr::kable(caption = "Trips QC: Da
 | .tchecks                                    | trips |
 |:--------------------------------------------|------:|
 | 03 departure after arrival                  |     1 |
-| 04 previous arrival after current departure |     2 |
 | 05 next departure before current arrival    |     3 |
-| 05 no vessel length                         |     1 |
+| 06 previous arrival after current departure |     2 |
+| 07 no vessel length                         |     1 |
 | ok                                          |   107 |
 
 Trips QC: Data checks
@@ -122,10 +121,9 @@ events <- events |>
 events |> count(.echecks, name = "events") |> knitr::kable(caption = "Events QC: Data checks")
 ```
 
-| .echecks            | events |
-|:--------------------|-------:|
-| 03 metier 6 invalid |    234 |
-| ok                  |   9640 |
+| .echecks | events |
+|:---------|-------:|
+| ok       |   9874 |
 
 Events QC: Data checks
 
@@ -160,7 +158,7 @@ eflalo_dropped <- eflalo_classic |>
   filter(.checks != "ok")
 eflalo_classic <- eflalo_classic |> 
   filter(.checks == "ok") |> 
-  select(.checks)
+  select(-.checks)
 # Side-step: Possibly for diagnostics/comparison between classical/tidy
 eflalo_alt <-     # name it this rather than tidy - because once joined the table is again non-tidy
   trips |> 
