@@ -8,3 +8,5 @@ documentations
 README.Rmd
 
 _garbage
+^vignettes/articles$
+^AGENTS\.md$

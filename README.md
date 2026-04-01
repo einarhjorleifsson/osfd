@@ -14,114 +14,178 @@ into labelled boxes — and then organised again, because the first
 attempt was also a junk drawer.
 
 All exported functions carry an `fd_` prefix (fisheries data, or fishy
-data — you decide). The package covers the full preprocessing and
-analysis pipeline: QC and cleaning (Phase 2), trip linking, activity
-classification, landings distribution, swept area, and effort enrichment
-(Phase 3).
+data — you decide). The package covers the QC preprocessing and analysis
+pipeline of the ICES VMS/logbooks data-call: QC and cleaning (Phase 1),
+trip linking, activity classification, landings distribution, swept
+area, and effort and catch enrichment (Phase 2).
+
+The process here will definitively **not reproduce** to the full extent
+the official [data-call
+process](https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call).
 
 ## Installation
-
-``` r
-# install.packages("pak")
-pak::pak("einarhjorleifsson/osfd")
-```
 
 Some dependencies are not on CRAN and come from the ICES r-universe:
 
 ``` r
-install.packages(
-  c("sfdSAR", "icesVMS", "icesVocab", "icesConnect"),
-  repos = "https://ices-tools-prod.r-universe.dev"
-)
+... instructions pending for non-crans
+# install.packages("remotes")
+remotes::install_github("einarhjorleifsson/osfd")
 ```
 
-## Quick start
+## Setting the stage
 
-The package ships with demo `eflalo` and `tacsat` datasets. A sketch of
-the full pipeline:
+Here load the needed libraries and create some temporary demo data. We
+are going to store them in directory “\_garbage”, set that up manually a
+priori.
 
 ``` r
-library(duckdbfs)
+# library(conflicted).  # don't ever use this again
+library(sf)
 library(nanoparquet)
+library(tidyverse)
 library(osfd)
-library(dplyr)
-library(stringr)
-library(lubridate)
-
-# --- Write demo data to disk (parquet, one file per year) ---------------------
-osfd::eflalo |>
-  mutate(year = as.integer(year(dmy(FT_DDAT)))) |> 
-  group_by(year) |> 
-  write_dataset("_garbage/eflalo")
-osfd::tacsat |>
-  mutate(year = as.integer(year(dmy(SI_DATE)))) |> 
-  group_by(year) |> 
-  write_dataset("_garbage/tacsat")
-
-# --- Preprocessing -----------------------------------------------------------
-eflalo <- read_parquet("_garbage/eflalo/year=1803/data_0.parquet")
-tacsat <- read_parquet("_garbage/tacsat/year=1803/data_0.parquet")
-
-# Coerce columns and parse datetimes
-eflalo <- fd_setup_eflalo(eflalo)
-tacsat <- fd_setup_tacsat(tacsat)
-
-# Single-pass QC (adds a `checks` column; caller decides what to filter)
-tacsat <- fd_check_tacsat(tacsat, it_min = 300)
-tacsat |> count(checks)
-tacsat <- tacsat |> filter(checks == "ok") |> select(-checks)
-
-# Single-pass QC (adds a `checks` column; caller decides what to filter)
-eflalo <- fd_eflalo_check(eflalo, year = 1803)
-eflalo |> count(checks)
-eflalo <- eflalo |> filter(str_starts(checks, "ok - no vessel tonnage")) |> select(-checks)
-
-
-# --- Analysis ----------------------------------------------------------------
-# Assign trip identifiers (and vessel attributes) to pings
-
-# Calculate ping intervals and classify fishing activity
-tacsatp <- fd_intv_tacsat(tacsatp, level = "trip", fill.na = TRUE)
-
-# TODO: Set the ping states (fishing or not)
-# ...
-
-# Distribute landings among fishing pings
-
-
-# Gear width and swept area
+library(vmstools)
 ```
 
-## Datacall flow
+``` r
+harbours_nw <- 
+  read_sf("~/Documents/stasi/fishydata/data/ports/ports_iceland_faroe.gpkg")
+```
 
-This preliminarily placed here, just a bookkeeping of the current
-datacall flow with comments if not yet implemented in {osfd}
+## Preprocessing
 
-### Preprocessing
+Here we work with Icelandic dataset that has been painfully converted to
+the EFLALO2 and TACSAT2 format.
 
-#### tacsat
+### Data setup
 
-- 1.2.1 Remove VMS pings outside the ICES areas
-  - This can be an expensive process if ais data is rich, because
-    dataframe turned to sf, then a join with ices-area shapefile but
-    then geometry is droppped. Question for now is if this can be moved
-    more downstream, where other spatial acrobatics take place.
-  - NOTE: Not yet implemented in {osfd}
-- 1.2.2 Remove duplicate records - in osfd::fd_tacsat_check
-- 1.2.3 Remove points that have impossible coordinates
-  - this is a redundant step, given 1.2.1 above
-- 1.2.4 Remove points which are pseudo duplicates as they have an
-  interval rate \< x minutes - in osdf:fd_tacsat_check
-  - the check function has accepts the minimum interval
-- 1.2.5 Remove points in harbour
+``` r
+eflalo <- "data-raw/eflalo_IS.parquet" |>  
+  read_parquet() |> 
+  # osfd::eflalo |> 
+  fd_clean_eflalo()
+tacsat <- 
+  "data-raw/tacsat_IS.parquet" |> 
+  read_parquet() |> 
+  #osfd::tacsat |> 
+  fd_clean_tacsat()
 
-## Source
+# Tidy alternative
+trips <- eflalo |> 
+  fd_trips()
+events <- eflalo |> 
+  fd_events()  
+```
 
-Functions are ported from
-[ICES-VMS-and-Logbook-Data-Call](https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call)
-scripts `0_global.R`, `1_eflalo_tacsat_preprocessing.R`, and
-`2_eflalo_tacsat_analysis.R`. Modernised script versions using `osfd`
-functions are in `inst/scripts/`.
+### Data checks
+
+``` r
+# Classical
+eflalo_classic <- eflalo |> 
+  fd_flag_eflalo()
+eflalo_classic |> count(.checks, name = "records") |> knitr::kable(caption = "Eflalo QC: Data checks")
+```
+
+| .checks                        | records |
+|:-------------------------------|--------:|
+| 03 new years trip              |      54 |
+| 04 departure after arrival     |      17 |
+| 06 overlapping trips           |     143 |
+| 08 metier 6 invalid            |     234 |
+| 09 catch date before departure |      33 |
+| 10 catch date after arrival    |     422 |
+| ok                             |    8971 |
+
+Eflalo QC: Data checks
+
+``` r
+# Tidy
+trips <- trips |> 
+  fd_flag_trips()
+trips |> count(.tchecks, name = "trips") |> knitr::kable(caption = "Trips QC: Data checks")
+```
+
+| .tchecks                                    | trips |
+|:--------------------------------------------|------:|
+| 03 departure after arrival                  |     1 |
+| 04 previous arrival after current departure |     2 |
+| 05 next departure before current arrival    |     3 |
+| 05 no vessel length                         |     1 |
+| ok                                          |   107 |
+
+Trips QC: Data checks
+
+``` r
+events <- events |> 
+  fd_flag_events()
+events |> count(.echecks, name = "events") |> knitr::kable(caption = "Events QC: Data checks")
+```
+
+| .echecks            | events |
+|:--------------------|-------:|
+| 03 metier 6 invalid |    234 |
+| ok                  |   9640 |
+
+Events QC: Data checks
+
+``` r
+
+# the good boy
+tacsat <- tacsat |> 
+  fd_flag_tacsat()
+tacsat |> count(.checks, name = "pings") |> knitr::kable(caption = "Trail QC: Data checks")
+```
+
+| .checks                     |  pings |
+|:----------------------------|-------:|
+| 01 point out of (ices) area | 102666 |
+| 02 duplicate                |  14420 |
+| 03 time interval too short  |  32265 |
+| ok                          | 566732 |
+
+Trail QC: Data checks
+
+### Filtering
+
+- Objective: Pass data to the next step (analysis)
+- Two alternative (I am “thinking” which would be less painful,
+  coding-wise):
+  - Use the classical approach
+  - Use the tidy approach
+
+``` r
+# Classical
+eflalo_dropped <- eflalo_classic |> 
+  filter(.checks != "ok")
+eflalo_classic <- eflalo_classic |> 
+  filter(.checks == "ok") |> 
+  select(.checks)
+# Side-step: Possibly for diagnostics/comparison between classical/tidy
+eflalo_alt <-     # name it this rather than tidy - because once joined the table is again non-tidy
+  trips |> 
+  filter(.tchecks == "ok") |> 
+  inner_join(events |> 
+              filter(.echecks == "ok"))
+# Tidy
+trips <- trips |> 
+  filter(.tchecks == "ok") |> 
+  select(-.tchecks)
+events <- events |> 
+  filter(.echecks == "ok") |> 
+  select(-.echecks)
+
+# same as usual
+tacsat <- tacsat |> 
+  filter(.checks == "ok") |> 
+  select(-.checks)
+  
+```
+
+## Analysis
+
+… pending, but want to get Preprocessing right from start (although that
+may have to be revisited
 
 ## License
 

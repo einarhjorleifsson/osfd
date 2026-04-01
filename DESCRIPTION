@@ -16,7 +16,8 @@ Imports:
     dplyr,
     icesVocab,
     lubridate,
-    sf
+    sf,
+    tidyr
 Suggests:
     duckdbfs,
     icesConnect,
@@ -24,6 +25,7 @@ Suggests:
     knitr,
     rmarkdown,
     sfdSAR,
+    stringr,
     testthat (>= 3.0.0),
     vmstools
 Remotes:
@@ -36,3 +38,4 @@ Depends:
     R (>= 3.5)
 LazyData: true
 LazyDataCompression: xz
+Config/Needs/website: rmarkdown
