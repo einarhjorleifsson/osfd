@@ -49,30 +49,32 @@ fd_trips <- function(eflalo) {
 
 #' Isolate Fishing Events from EFLALO Data
 #'
-#' Selects fishing event variables from an EFLALO dataset. Raises an error if
-#' the row count decreases after deduplication, which indicates non-distinct
-#' events. For trip-level data, see \code{\link{fd_trips}}.
+#' Selects fishing event variables from an EFLALO dataset and raises an error
+#' if the row count decreases after deduplication. For trip-level data, see
+#' \code{\link{fd_trips}}.
 #'
 #' @param eflalo A data frame containing EFLALO data. Must include columns with
 #'   prefixes `VE_` (vessel), `FT_` (fishing trip), and `LE_` (fishing event),
-#'   plus the `.eid` and `.tid` columns added by `fd_clean_eflalo()`.
+#'   plus the `.eid` and `.tid` columns added by `fd_clean_eflalo()`. If
+#'   `fd_clean_eflalo()` was run first, `t1`, `t2`, and `.tsrc` (event
+#'   datetimes derived from `LE_CDAT`/`LE_STIME`/`LE_ETIME`) will already be
+#'   present and are passed through.
 #'
 #' @return A data frame containing fishing events with `.eid`, all `LE_*`
-#'   columns, and `.tid`. Each row should represent a distinct event; an error
-#'   is raised if duplicates are detected.
-#'
-#' @details
-#' All `LE_*` columns are retained, including `LE_KG_*` and `LE_EURO_*` species
-#' catch columns. If you need species catch in long format, use
-#' \code{\link{fd_tidy_eflalo}} instead.
+#'   columns, `.tid`, and — if `fd_clean_eflalo()` was run upstream — `t1`,
+#'   `t2`, and `.tsrc`. All `LE_KG_*` and `LE_EURO_*` catch columns are
+#'   retained.
 #'
 #' @seealso
+#'   \code{\link{fd_clean_eflalo}} for the upstream step that derives `t1`,
+#'   `t2`, and `.tsrc`,
 #'   \code{\link{fd_trips}} for extracting trip-level data,
 #'   \code{\link{fd_tidy_eflalo}} for extracting both trips and events in one call.
 #'
 #' @examples
 #' \dontrun{
 #'   events <- fd_events(eflalo)
+#'   events |> dplyr::count(.tsrc)
 #' }
 #'
 #' @export
@@ -80,7 +82,9 @@ fd_events <- function(eflalo) {
 
   rows <- nrow(eflalo)
   events <- eflalo |>
-    dplyr::select(.eid, dplyr::starts_with("LE_"), .tid) |>
+    dplyr::select(.eid, dplyr::starts_with("LE_"),
+                  dplyr::any_of(c("t1", "t2", ".tsrc")),
+                  .tid) |>
     dplyr::distinct()
 
   if (rows > nrow(events)) {

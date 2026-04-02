@@ -18,6 +18,20 @@
 
 Both parquet files are the primary test data for catch distribution development.
 
+## Field Definitions (`data/field_definitions.rda`)
+
+A data dictionary covering all TACSAT2 and EFLALO2 fields, built from
+`data-raw/DATASET_field_definitions.R`. Documented in `R/data.R`.
+
+**Columns:** `field`, `table` (`"tacsat"` / `"eflalo"`), `type` (R type post-cleaning), `format` (raw format), `description`, `required`, `derived`.
+
+**⚠️ Keep this in sync** when new columns are introduced by package functions — particularly:
+- Preprocessing (`fd_clean_*`): derived columns like `SI_DATIM`, `FT_DDATIM`, `t1`, `t2`, `.tsrc`, `.eid`, `.tid`
+- Analysis (`fd_add_trips()` and future functions): any columns appended to tacsat/eflalo during the analysis phase
+- Post-distribution helpers (swept area, CPUE, etc.) once implemented
+
+To update: edit `data-raw/DATASET_field_definitions.R` and re-run it (`source()` or `Rscript`).
+
 ## Key Concepts
 
 **eflalo** — logbook records; one row per trip × day × ICES rectangle event. Catch columns are `LE_KG_{SPECIES}` and `LE_EURO_{SPECIES}`. Aggregated totals are `LE_KG_TOT` and `LE_EURO_TOT`.
@@ -59,6 +73,7 @@ Both parquet files are the primary test data for catch distribution development.
 - Coerces `KG`/`EURO` columns + `VE_KW`, `VE_LEN`, `VE_TON`, `LE_MSZ` to numeric
 - Adds `.eid` (integer row identifier) and `.tid` (trip identifier via `consecutive_id()`)
 - Removes raw date/time columns by default; sorts by `VE_COU`, `VE_REF`, `FT_DDATIM`, `FT_LDATIM`, `LE_CDAT`
+- If `LE_STIME` and `LE_ETIME` are present, also derives `t1`, `t2`, `.tsrc` (event-level datetimes — see `fd_events()` section for derivation table)
 
 ## Check Functions (`R/data_flag.R`)
 
@@ -156,9 +171,17 @@ Contains three functions; `fd_flag_trips()` and `fd_flag_events()` have been **m
 - Requires `.tid` added by `fd_clean_eflalo()`
 
 ### `fd_events(eflalo)`
-- Selects `.eid`, all `LE_*` columns (including `LE_KG_*` / `LE_EURO_*`), and `.tid`
+- Selects `.eid`, all `LE_*` columns (including `LE_KG_*` / `LE_EURO_*`), `.tid`, and (if present) `t1`, `t2`, `.tsrc`
 - Errors with a helpful message if rows decrease after `distinct()` (duplicate events detected)
 - Requires `.eid` and `.tid` added by `fd_clean_eflalo()`
+- `t1`, `t2`, `.tsrc` are derived by `fd_clean_eflalo()` (not here) and passed through. Derivation logic:
+
+| `.tsrc` | Condition | `t1` | `t2` |
+|---|---|---|---|
+| `"data"` | All three present; `LE_STIME ≤ LE_ETIME` | `LE_CDAT` + `LE_STIME` | `LE_CDAT` + `LE_ETIME` |
+| `"next day"` | All three present; `LE_STIME > LE_ETIME` | `LE_CDAT` + `LE_STIME` | `(LE_CDAT + 1)` + `LE_ETIME` |
+| `"dummy"` | `LE_CDAT` present; one or both times `NA` | `LE_CDAT 00:01` | `LE_CDAT 23:59` |
+| `NA` | `LE_CDAT` is `NA` | `NA` | `NA` |
 
 ### `fd_tidy_eflalo(eflalo)`
 - Convenience wrapper returning `list(trips = fd_trips(eflalo), events = fd_events(eflalo))`

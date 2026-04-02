@@ -9,7 +9,8 @@ fd_clean_eflalo(eflalo, remove = TRUE)
 \arguments{
 \item{eflalo}{A data frame in EFLALO format. Must contain \code{VE_KW}, \code{VE_LEN},
 \code{VE_TON}, \code{LE_MSZ}, \code{LE_CDAT}, \code{FT_DDAT}, \code{FT_DTIME}, \code{FT_LDAT}, and
-\code{FT_LTIME}.}
+\code{FT_LTIME}. \code{LE_STIME} and \code{LE_ETIME} (\code{"HH:MM"} character) are used if
+present.}
 
 \item{remove}{Logical. If \code{TRUE} (default), the raw date/time columns
 \code{FT_DDAT}, \code{FT_DTIME}, \code{FT_LDAT}, and \code{FT_LTIME} are dropped once
@@ -24,6 +25,13 @@ The input \code{eflalo} as a tibble with:
 \item{\code{FT_DDATIM}}{POSIXct departure datetime (UTC).}
 \item{\code{FT_LDATIM}}{POSIXct landing datetime (UTC).}
 \item{\code{LE_CDAT}}{Date, re-parsed from \code{"DD/MM/YYYY"} character.}
+\item{\code{t1}}{POSIXct event start (UTC).}
+\item{\code{t2}}{POSIXct event end (UTC).}
+\item{\code{.tsrc}}{Character. Derivation source for \code{t1}/\code{t2}:
+\code{"data"} (both times present, same day),
+\code{"next day"} (start > end, so \code{t2} rolls to next day),
+\code{"dummy"} (\code{LE_CDAT} present but one/both times \code{NA}; \code{t1 = 00:01}, \code{t2 = 23:59}),
+or \code{NA} (\code{LE_CDAT} itself is \code{NA}).}
 }
 Numeric columns (\code{VE_KW}, \code{VE_LEN}, \code{VE_TON}, \code{LE_MSZ}, all \code{KG}/\code{EURO}
 columns) are coerced to numeric. If \code{remove = TRUE}, the raw date/time
@@ -43,9 +51,18 @@ Two internal key columns are also added:
 trip-defining columns.}
 }
 
+Event-level datetimes are derived from \code{LE_CDAT}, \code{LE_STIME}, and \code{LE_ETIME}
+(the latter two are character \code{"HH:MM"} in the raw file):
+\describe{
+\item{\code{t1}}{Event start (POSIXct, UTC).}
+\item{\code{t2}}{Event end (POSIXct, UTC).}
+\item{\code{.tsrc}}{How \code{t1}/\code{t2} were derived — \code{"data"}, \code{"next day"},
+\code{"dummy"}, or \code{NA}. See Details.}
+}
+
 \strong{Note:} This function is R-only. \code{paste()}, \code{lubridate::dmy_hms()},
-\code{lubridate::dmy()}, \code{row_number()}, and \code{consecutive_id()} are not compatible
-with lazy/DuckDB backends.
+\code{lubridate::dmy()}, \code{lubridate::ymd_hm()}, \code{row_number()}, and
+\code{consecutive_id()} are not compatible with lazy/DuckDB backends.
 }
 \examples{
 \dontrun{

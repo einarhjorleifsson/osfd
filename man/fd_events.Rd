@@ -9,30 +9,32 @@ fd_events(eflalo)
 \arguments{
 \item{eflalo}{A data frame containing EFLALO data. Must include columns with
 prefixes \code{VE_} (vessel), \code{FT_} (fishing trip), and \code{LE_} (fishing event),
-plus the \code{.eid} and \code{.tid} columns added by \code{fd_clean_eflalo()}.}
+plus the \code{.eid} and \code{.tid} columns added by \code{fd_clean_eflalo()}. If
+\code{fd_clean_eflalo()} was run first, \code{t1}, \code{t2}, and \code{.tsrc} (event
+datetimes derived from \code{LE_CDAT}/\code{LE_STIME}/\code{LE_ETIME}) will already be
+present and are passed through.}
 }
 \value{
 A data frame containing fishing events with \code{.eid}, all \verb{LE_*}
-columns, and \code{.tid}. Each row should represent a distinct event; an error
-is raised if duplicates are detected.
+columns, \code{.tid}, and — if \code{fd_clean_eflalo()} was run upstream — \code{t1},
+\code{t2}, and \code{.tsrc}. All \verb{LE_KG_*} and \verb{LE_EURO_*} catch columns are
+retained.
 }
 \description{
-Selects fishing event variables from an EFLALO dataset. Raises an error if
-the row count decreases after deduplication, which indicates non-distinct
-events. For trip-level data, see \code{\link{fd_trips}}.
-}
-\details{
-All \verb{LE_*} columns are retained, including \verb{LE_KG_*} and \verb{LE_EURO_*} species
-catch columns. If you need species catch in long format, use
-\code{\link{fd_tidy_eflalo}} instead.
+Selects fishing event variables from an EFLALO dataset and raises an error
+if the row count decreases after deduplication. For trip-level data, see
+\code{\link{fd_trips}}.
 }
 \examples{
 \dontrun{
   events <- fd_events(eflalo)
+  events |> dplyr::count(.tsrc)
 }
 
 }
 \seealso{
+\code{\link{fd_clean_eflalo}} for the upstream step that derives \code{t1},
+\code{t2}, and \code{.tsrc},
 \code{\link{fd_trips}} for extracting trip-level data,
 \code{\link{fd_tidy_eflalo}} for extracting both trips and events in one call.
 }

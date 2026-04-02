@@ -181,3 +181,39 @@
 #' `data-raw/DATASET_vmstools.R`.
 #'
 "ices_areas"
+
+
+#' Field definitions for TACSAT2 and EFLALO2
+#'
+#' @description
+#' A data dictionary covering all fields in the TACSAT2 and EFLALO2 formats as
+#' specified by the ICES VMS and Logbook Data-Call, plus the derived columns
+#' added by `fd_clean_tacsat()` and `fd_clean_eflalo()`.
+#'
+#' Useful for programmatically checking that user-supplied data frames contain
+#' the expected columns with the expected types, and for documentation.
+#'
+#' @format A tibble with 47 rows and 7 variables:
+#' \describe{
+#'   \item{`field`}{Variable name in R (character). Species-specific columns
+#'     are represented as `LE_KG_<SP>` and `LE_EURO_<SP>`.}
+#'   \item{`table`}{Which table the field belongs to: `"tacsat"`, `"eflalo"`,
+#'     or `"both"` (character).}
+#'   \item{`type`}{Expected R type after import / cleaning: `"chr"`, `"dbl"`,
+#'     `"int"`, `"dttm"`, `"date"`, or `"lgl"` (character).}
+#'   \item{`format`}{Raw format in the original file, e.g. `"DD/MM/YYYY"` or
+#'     `"Decimal degrees"`. `NA` for derived columns (character).}
+#'   \item{`description`}{Short description of the field (character).}
+#'   \item{`required`}{`TRUE` if the field is required by `fd_clean_*` or the
+#'     data-call; `FALSE` if optional (logical).}
+#'   \item{`derived`}{`TRUE` if the field is added or transformed by
+#'     `fd_clean_tacsat()` / `fd_clean_eflalo()`; `FALSE` if present in the
+#'     raw file (logical).}
+#' }
+#'
+#' @source
+#' ICES VMS and Logbook Data-Call format specification. Derived columns
+#' documented from `fd_clean_tacsat()` and `fd_clean_eflalo()` source code.
+#' Built via `data-raw/DATASET_field_definitions.R`.
+#'
+"field_definitions"

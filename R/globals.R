@@ -13,6 +13,7 @@ utils::globalVariables(c(
   "euro", "kg",
   "FT_DCOU", "FT_DHAR", "FT_LCOU", "FT_LHAR", "VE_FLT",
   ".checks", ".overlap",
-  ".tid", ".eid", ".echecks", ".tchecks", ".tid"
+  ".tid", ".eid", ".echecks", ".tchecks", ".tid",
+  ".t1_str", ".t2_str", "LE_STIME"
   ))
 

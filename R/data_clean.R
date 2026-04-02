@@ -76,13 +76,23 @@ fd_clean_tacsat <- function(tacsat, remove = TRUE) {
 #'     trip-defining columns.}
 #' }
 #'
+#' Event-level datetimes are derived from `LE_CDAT`, `LE_STIME`, and `LE_ETIME`
+#' (the latter two are character `"HH:MM"` in the raw file):
+#' \describe{
+#'   \item{`t1`}{Event start (POSIXct, UTC).}
+#'   \item{`t2`}{Event end (POSIXct, UTC).}
+#'   \item{`.tsrc`}{How `t1`/`t2` were derived — `"data"`, `"next day"`,
+#'     `"dummy"`, or `NA`. See Details.}
+#' }
+#'
 #' **Note:** This function is R-only. `paste()`, `lubridate::dmy_hms()`,
-#' `lubridate::dmy()`, `row_number()`, and `consecutive_id()` are not compatible
-#' with lazy/DuckDB backends.
+#' `lubridate::dmy()`, `lubridate::ymd_hm()`, `row_number()`, and
+#' `consecutive_id()` are not compatible with lazy/DuckDB backends.
 #'
 #' @param eflalo A data frame in EFLALO format. Must contain `VE_KW`, `VE_LEN`,
 #'   `VE_TON`, `LE_MSZ`, `LE_CDAT`, `FT_DDAT`, `FT_DTIME`, `FT_LDAT`, and
-#'   `FT_LTIME`.
+#'   `FT_LTIME`. `LE_STIME` and `LE_ETIME` (`"HH:MM"` character) are used if
+#'   present.
 #' @param remove Logical. If `TRUE` (default), the raw date/time columns
 #'   `FT_DDAT`, `FT_DTIME`, `FT_LDAT`, and `FT_LTIME` are dropped once
 #'   `FT_DDATIM` / `FT_LDATIM` have been constructed. `LE_CDAT` is kept but
@@ -95,6 +105,13 @@ fd_clean_tacsat <- function(tacsat, remove = TRUE) {
 #'     \item{`FT_DDATIM`}{POSIXct departure datetime (UTC).}
 #'     \item{`FT_LDATIM`}{POSIXct landing datetime (UTC).}
 #'     \item{`LE_CDAT`}{Date, re-parsed from `"DD/MM/YYYY"` character.}
+#'     \item{`t1`}{POSIXct event start (UTC).}
+#'     \item{`t2`}{POSIXct event end (UTC).}
+#'     \item{`.tsrc`}{Character. Derivation source for `t1`/`t2`:
+#'       `"data"` (both times present, same day),
+#'       `"next day"` (start > end, so `t2` rolls to next day),
+#'       `"dummy"` (`LE_CDAT` present but one/both times `NA`; `t1 = 00:01`, `t2 = 23:59`),
+#'       or `NA` (`LE_CDAT` itself is `NA`).}
 #'   }
 #'   Numeric columns (`VE_KW`, `VE_LEN`, `VE_TON`, `LE_MSZ`, all `KG`/`EURO`
 #'   columns) are coerced to numeric. If `remove = TRUE`, the raw date/time
@@ -143,6 +160,36 @@ fd_clean_eflalo <- function(eflalo, remove = TRUE) {
     )
 
   if (remove) eflalo <- dplyr::select(eflalo, -c(FT_DDAT, FT_DTIME, FT_LDAT, FT_LTIME))
+
+  # Derive event datetimes from LE_CDAT + LE_STIME/LE_ETIME.
+  # Build intermediate date-time strings first so lubridate never receives
+  # partial NAs — case_when selects the correct string per row.
+  # NOTE: paste() and lubridate::ymd_hm() are R-only; not duckdb-compatible
+  if (all(c("LE_STIME", "LE_ETIME") %in% names(eflalo))) {
+    eflalo <- eflalo |>
+      dplyr::mutate(
+        .tsrc = dplyr::case_when(
+          is.na(LE_CDAT)                         ~ NA_character_,
+          is.na(LE_STIME) | is.na(LE_ETIME)      ~ "dummy",
+          LE_STIME <= LE_ETIME                    ~ "data",
+          LE_STIME > LE_ETIME                     ~ "next day"
+        ),
+        .t1_str = dplyr::case_when(
+          is.na(LE_CDAT)                         ~ NA_character_,
+          is.na(LE_STIME) | is.na(LE_ETIME)      ~ paste(LE_CDAT, "00:01"),
+          .default                               = paste(LE_CDAT, LE_STIME)
+        ),
+        .t2_str = dplyr::case_when(
+          is.na(LE_CDAT)                         ~ NA_character_,
+          is.na(LE_STIME) | is.na(LE_ETIME)      ~ paste(LE_CDAT, "23:59"),
+          LE_STIME <= LE_ETIME                    ~ paste(LE_CDAT, LE_ETIME),
+          LE_STIME > LE_ETIME                     ~ paste(LE_CDAT + 1L, LE_ETIME)
+        ),
+        t1 = lubridate::ymd_hm(.t1_str, tz = "UTC", quiet = TRUE),
+        t2 = lubridate::ymd_hm(.t2_str, tz = "UTC", quiet = TRUE)
+      ) |>
+      dplyr::select(-.t1_str, -.t2_str)
+  }
 
   return(eflalo)
 }
