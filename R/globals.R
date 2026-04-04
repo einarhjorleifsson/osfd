@@ -14,6 +14,13 @@ utils::globalVariables(c(
   "FT_DCOU", "FT_DHAR", "FT_LCOU", "FT_LHAR", "VE_FLT",
   ".checks", ".overlap",
   ".tid", ".eid", ".echecks", ".tchecks", ".tid",
-  ".t1_str", ".t2_str", "LE_STIME"
+  ".t1_str", ".t2_str", "LE_STIME",
+  "derived", "dictionary", "field", "required", "type",
+  ".sid", "T1", "T2", "cid", "cid1", "cid2", "eid", "flt", "gt", "hid1", "hid2",
+  "kw", "old", "tid", "time", "vid",
+  "LE_ETIME", "lid",
+  ".prev_max_t2", "t1", "t2",
+  "dictionary", "lat", "lon", "events",
+  "s1", "s2"
   ))
 

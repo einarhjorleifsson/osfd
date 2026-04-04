@@ -7,27 +7,28 @@
 fd_trips(eflalo)
 }
 \arguments{
-\item{eflalo}{A data frame containing EFLALO data. Must include columns with
-prefixes \code{VE_} (vessel variables) and \code{FT_} (fishing trip variables), and
-the \code{.tid} column added by \code{fd_clean_eflalo()}.}
+\item{eflalo}{A data frame as returned by \code{fd_clean_eflalo()}. Must include
+the renamed vessel columns (\code{vid}, \code{flt}, \code{cid}, \code{length}, \code{kw}, \code{gt}),
+trip columns (\code{tid}, \code{cid1}, \code{hid1}, \code{T1}, \code{cid2}, \code{hid2}, \code{T2}), and the
+internal \code{.tid} key added by \code{fd_clean_eflalo()}.}
 }
 \value{
-A data frame containing distinct combinations of vessel and trip variables:
+A data frame with one row per distinct trip:
 \describe{
-\item{.tid}{Internal trip identifier (from \code{fd_clean_eflalo()})}
-\item{VE_REF}{Vessel reference identifier}
-\item{VE_FLT}{Vessel fleet segment}
-\item{VE_COU}{Vessel country}
-\item{VE_LEN}{Vessel length}
-\item{VE_KW}{Vessel power (kW)}
-\item{VE_TON}{Vessel tonnage}
-\item{FT_REF}{Fishing trip reference}
-\item{FT_DCOU}{Fishing trip departure country}
-\item{FT_DHAR}{Fishing trip departure harbour}
-\item{FT_DDATIM}{Fishing trip departure date/time}
-\item{FT_LCOU}{Fishing trip landing country}
-\item{FT_LHAR}{Fishing trip landing harbour}
-\item{FT_LDATIM}{Fishing trip landing date/time}
+\item{.tid}{Internal integer trip identifier (from \code{fd_clean_eflalo()})}
+\item{vid}{Vessel identifier (\code{VE_REF})}
+\item{flt}{Fleet segment (\code{VE_FLT})}
+\item{cid}{Vessel flag country (\code{VE_COU})}
+\item{length}{Vessel overall length, m (\code{VE_LEN})}
+\item{kw}{Engine power, kW (\code{VE_KW})}
+\item{gt}{Vessel tonnage (\code{VE_TON})}
+\item{tid}{Fishing trip reference (\code{FT_REF})}
+\item{cid1}{Departure country (\code{FT_DCOU})}
+\item{hid1}{Departure harbour (\code{FT_DHAR})}
+\item{T1}{Trip departure datetime, POSIXct UTC (\code{FT_DDATIM})}
+\item{cid2}{Landing country (\code{FT_LCOU})}
+\item{hid2}{Landing harbour (\code{FT_LHAR})}
+\item{T2}{Trip landing datetime, POSIXct UTC (\code{FT_LDATIM})}
 }
 }
 \description{
@@ -35,7 +36,7 @@ Extract trip level structure from the EFLALO.
 }
 \details{
 This function deduplicates rows to extract the unique trip-level structure
-from raw EFLALO data. Each row in the output represents a distinct combination
+from EFLALO data. Each row in the output represents a distinct combination
 of vessel and trip attributes.
 }
 \examples{

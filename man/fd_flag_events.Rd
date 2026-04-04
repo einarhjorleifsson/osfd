@@ -8,8 +8,9 @@ fd_flag_events(events, gear = NULL, met6 = NULL)
 }
 \arguments{
 \item{events}{A data frame of fishing events as returned by
-\code{\link{fd_events}}. Must contain \code{LE_ID}, \code{LE_CDAT}, \code{LE_GEAR}, and
-\code{LE_MET}.}
+\code{\link{fd_events}}. Must contain \code{lid} (\code{LE_ID}), \code{date} (\code{LE_CDAT}),
+\code{gear} (\code{LE_GEAR}), and \code{met6} (\code{LE_MET}). If \code{t1} and \code{t2} are present,
+temporal checks 04–09 are also applied.}
 
 \item{gear}{Character vector of valid ICES gear codes (metier level 4).
 Obtain via \code{icesVocab::getCodeList("GearType")$Key}. If \code{NULL} (default),
@@ -30,20 +31,32 @@ or \code{"ok"} if all checks pass.
 \strong{This function never filters.} Filtering is deliberately left to the caller:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{events |>
-  fd\\_check\\_events() |>
+  fd\\_flag\\_events() |>
   dplyr::filter(.echecks == "ok")
 }\if{html}{\out{</div>}}
 
 Checks are performed in the following order and return the first failure:
 \describe{
-\item{\code{"01 duplicate event id and catch date"}}{Duplicate of a previous row with the same \code{LE_ID} and \code{LE_CDAT}}
-\item{\code{"02 gear (metier 4) invalid"}}{\code{LE_GEAR} is not in the supplied \code{gear} vector (skipped if \code{gear = NULL})}
-\item{\code{"03 metier 6 invalid"}}{\code{LE_MET} is not in the supplied \code{met6} vector (skipped if \code{met6 = NULL})}
+\item{\code{"01 duplicate event id and catch date"}}{Duplicate of a previous row with the same \code{lid} (\code{LE_ID}) and \code{date} (\code{LE_CDAT})}
+\item{\code{"02 gear (metier 4) invalid"}}{\code{gear} (\code{LE_GEAR}) is not in the supplied \code{gear} vector (skipped if \code{gear = NULL})}
+\item{\code{"03 metier 6 invalid"}}{\code{met6} (\code{LE_MET}) is not in the supplied \code{met6} vector (skipped if \code{met6 = NULL})}
+\item{\code{"04 start time missing"}}{\code{t1} is \code{NA} (only checked when \code{t1}/\code{t2} are present)}
+\item{\code{"05 end time missing"}}{\code{t2} is \code{NA}}
+\item{\code{"06 start time after end time"}}{\code{t1 > t2}}
+\item{\code{"07 start time equals end time"}}{\code{t1 == t2}}
+\item{\code{"08 overlaps with a previous event"}}{\code{t1} falls before the cumulative
+maximum of all preceding \code{t2} values within the trip — detects all cascading
+overlaps in a single pass, not just adjacent ones}
 \item{\code{"ok"}}{All checks passed}
 }
 
-\strong{Note:} Catch-date range checks (\code{LE_CDAT} vs. trip departure/arrival) are
-not performed here because events are separated from trips at this stage.
+Checks 04–08 apply only when \code{t1} and \code{t2} columns are present (derived by
+\code{fd_clean_eflalo()} from \code{LE_STIME}/\code{LE_ETIME}). Events are sorted by \code{t1}
+within each trip before the overlap check is applied. Check 08 may produce
+false positives for static gears where simultaneous deployments are valid.
+
+\strong{Note:} Catch-date range checks (\code{date} (\code{LE_CDAT}) vs. trip departure/arrival)
+are not performed here because events are separated from trips at this stage.
 Those checks are available in \code{\link{fd_flag_eflalo}} when working with
 the full joined EFLALO data frame.
 }

@@ -115,3 +115,7 @@ eflalo <-
   nanoparquet::read_parquet("data-raw/eflalo_IS.parquet")
 eflalo |> select(-c(.T1, .T2)) |> nanoparquet::write_parquet("data-raw/eflalo_IS.parquet")
 eflalo |> select(-c(.T1, .T2)) |> nanoparquet::write_parquet("/home/hafri/einarhj/public_html/data/eflalo_IS.parquet")
+
+# final destination is web-page
+sf::read_sf("~/Documents/stasi/fishydata/data/ports/ports_iceland_faroe.gpkg") |>
+  sf::write_sf("/Volumes/einarhj/ports_iceland_faroe.gpkg")

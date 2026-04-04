@@ -22,14 +22,11 @@ knitr::opts_chunk$set(
 
 {**osfd**} (or: "oh yet another, spatial fisheries data package") consolidates
 the ICES WGSFD VMS and logbook datacall workflow into a properly documented,
-testable package. A junk drawer, finally organised into labelled boxes — and
-then organised again, because the first attempt was also a junk drawer.
+testable package.
 
 All exported functions carry an `fd_` prefix (fisheries data, or fishy data —
-you decide). The package covers the QC preprocessing and analysis pipeline of
-the ICES VMS/logbooks data-call:
-QC and cleaning (Phase 1), trip linking, activity classification, landings
-distribution, swept area, and effort and catch enrichment (Phase 2).
+you decide). The package current versions covers the QC pre-processing of
+the ICES VMS/logbooks data-call. Processing functions are pending.
 
 The process here will definitively **not reproduce** to the full extent the
 official [data-call process](https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call).
@@ -46,105 +43,125 @@ remotes::install_github("einarhjorleifsson/osfd")
 
 ## Setting the stage
 
-Here load the needed libraries and create some temporary demo data. We are going
-to store them in directory "_garbage", set that up manually a priori.
+Here load the needed libraries and load some demo data that reside on the web.
 
 ```{r load}
 # library(conflicted).  # don't ever use this again
 library(sf)
-library(nanoparquet)
+library(arrow)
 library(tidyverse)
 library(osfd)
 library(vmstools)
 ```
 
-```{r overwrite_default_data}
-harbours_nw <- 
-  read_sf("~/Documents/stasi/fishydata/data/ports/ports_iceland_faroe.gpkg")
+```{r}
+pth_ports  <- "https://heima.hafro.is/~einarhj/data/ports_iceland_faroe.gpkg"
+pth_eflalo <- "https://heima.hafro.is/~einarhj/data/eflalo_IS.parquet"
+pth_tacsat <- "https://heima.hafro.is/~einarhj/data/tacsat_IS.parquet"
+pth_gear <- "https://heima.hafro.is/~einarhj/data/gear_mapping.parquet"
+pth_eusm <- ""
+pth_depth <- ""
 ```
+
+
+```{r overwrite_default_data}
+ports       <- read_sf(pth_ports)
+eflalo      <- arrow::read_parquet(pth_eflalo)
+tacsat      <- arrow::read_parquet(pth_tacsat)
+speed_table <- arrow::read_parquet(pth_gear) |> select(gear, target, s1, s2)
+```
+
 ## Preprocessing
 
-Here we work with Icelandic dataset that has been painfully converted to the EFLALO2 and TACSAT2 format.
-
-### Data setup
+... text is pending, but here is an illustration of user code flow to complete the task.
 
 ```{r setup}
-eflalo <- "data-raw/eflalo_IS.parquet" |>  
-  read_parquet() |> 
-  # osfd::eflalo |> 
-  fd_clean_eflalo()
-tacsat <- 
-  "data-raw/tacsat_IS.parquet" |> 
-  read_parquet() |> 
-  #osfd::tacsat |> 
-  fd_clean_tacsat()
+ais <- tacsat |> 
+  fd_clean_tacsat() |> 
+  fd_flag_tacsat() |> 
+  # user interference possible
+  filter(.checks == "ok")
 
-# Tidy alternative
 trips <- eflalo |> 
-  fd_trips()
-events <- eflalo |> 
-  fd_events()  
-```
+  fd_clean_eflalo() |> 
+  fd_trips() |> 
+  fd_flag_trips() |> 
+  # user interference possible
+  filter(.tchecks == "ok")
 
-### Data checks
-
-```{r checks}
-# Classical
-eflalo_classic <- eflalo |> 
-  fd_flag_eflalo()
-eflalo_classic |> count(.checks, name = "records") |> knitr::kable(caption = "Eflalo QC: Data checks")
-# Tidy
-trips <- trips |> 
-  fd_flag_trips()
-trips |> count(.tchecks, name = "trips") |> knitr::kable(caption = "Trips QC: Data checks")
-events <- events |> 
-  fd_flag_events()
-events |> count(.echecks, name = "events") |> knitr::kable(caption = "Events QC: Data checks")
-
-# the good boy
-tacsat <- tacsat |> 
-  fd_flag_tacsat()
-tacsat |> count(.checks, name = "pings") |> knitr::kable(caption = "Trail QC: Data checks")
-```
-
-### Filtering
-
-* Objective: Pass data to the next step (analysis)
-* Two alternative (I am "thinking" which would be less painful, coding-wise):
-  * Use the classical approach
-  * Use the tidy approach
-  
-```{r filter}
-# Classical
-eflalo_dropped <- eflalo_classic |> 
-  filter(.checks != "ok")
-eflalo_classic <- eflalo_classic |> 
-  filter(.checks == "ok") |> 
-  select(-.checks)
-# Side-step: Possibly for diagnostics/comparison between classical/tidy
-eflalo_alt <-     # name it this rather than tidy - because once joined the table is again non-tidy
-  trips |> 
-  filter(.tchecks == "ok") |> 
-  inner_join(events |> 
-              filter(.echecks == "ok"))
-# Tidy
-trips <- trips |> 
-  filter(.tchecks == "ok") |> 
-  select(-.tchecks)
-events <- events |> 
-  filter(.echecks == "ok") |> 
-  select(-.echecks)
-
-# same as usual
-tacsat <- tacsat |> 
-  filter(.checks == "ok") |> 
-  select(-.checks)
-  
+events <- eflalo |>
+  fd_clean_eflalo() |> 
+  fd_events() |> 
+  fd_flag_events() |> 
+  # user interference possible
+  filter(.echecks == "ok")
 ```
 
 ## Analysis
 
-... pending, but want to get Preprocessing right from start (although that may have to be revisited
+A little peek-a-boo, ... not run, only partially ready
+
+```{r, eval = FALSE}
+ais2 <- ais |> 
+  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |> 
+  fd_add_events(events) |> 
+  # here ais has to already have gear and target
+  fd_add_state(speed_table) |> 
+  filter(state == "fishing") |> 
+  # fd_add_catch(events) |>
+  fd_add_sf(eusm) |> 
+  fd_add_sf(bathy) |> 
+  mutate(csq = fd_calc_csq(lon, lat)) |>
+  # fd_add_gearwith(gear_width_table) |> 
+  # fd_calc_sa()
+```
+
+## Submission
+
+More peek-a-boo, ... not run, not ready
+
+```{r, eval = FALSE}
+# ... pending
+ais3 <- ais2 |> 
+  fd_final_tests() 
+ais3 |> fd_aggregate() |> fd_export_table1()
+ais3 |> fd_aggregate() |> fd_export_table2()
+```
+
+
+## Some testing
+
+```{r}
+# sidestep in order to run datacall way below
+e_test <- left_join(trips, events) |> 
+  fd_revert_eflalo() |> 
+  as.data.frame()
+t_test <- ais |> 
+  fd_revert_tacsat() |> 
+  as.data.frame()
+
+# Datacall way -----------------------------------------------------------------
+merged <- vmstools::mergeEflalo2Tacsat(e_test, t_test)
+cols <- c("LE_GEAR", "LE_MSZ", "VE_LEN", "VE_KW", "LE_RECT", "LE_MET", "LE_WIDTH", "VE_FLT", "VE_COU")
+# Use a loop to add each column
+for (col in cols) {
+  # Match 'FT_REF' values in 'tacsatp' and 'eflalo' and use these to add the column from 'eflalo' to 'tacsatp'
+  merged[[col]] <- e_test[[col]][match(merged$FT_REF, e_test$FT_REF)]
+}
+
+# {osfd} way - could be wrapped in a function ----------------------------------
+aism <- ais |> 
+  left_join(trips,
+            by = join_by(cid, vid,
+                         between(time, T1, T2)),
+            relationship = "many-to-one")
+# similarly, wrapped in a function
+ais_trips <- ais |> fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid"))
+
+# comparison -------------------------------------------------------------------
+identical(merged$FT_REF, replace_na(aism$tid, "0"))
+```
+
 
 ## License
 

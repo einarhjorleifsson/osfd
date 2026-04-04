@@ -31,15 +31,16 @@ datetime vector; use it within \code{\link[dplyr:mutate]{dplyr::mutate()}} after
 }
 \examples{
 \dontrun{
+# After fd_clean_tacsat() the datetime column is `time` and vessel id is `vid`
 tacsat |>
-  dplyr::group_by(VE_REF, FT_REF) |>
-  dplyr::mutate(INTV = fd_step_time(SI_DATIM)) |>
+  dplyr::group_by(vid) |>
+  dplyr::mutate(.intv = fd_step_time(time)) |>
   dplyr::ungroup()
 
 # equal forward/backward blend, fill boundary NAs
 tacsat |>
-  dplyr::group_by(VE_REF, FT_REF) |>
-  dplyr::mutate(INTV = fd_step_time(SI_DATIM, weight = c(0.5, 0.5), fill_na = TRUE)) |>
+  dplyr::group_by(vid) |>
+  dplyr::mutate(.intv = fd_step_time(time, weight = c(0.5, 0.5), fill_na = TRUE)) |>
   dplyr::ungroup()
 }
 

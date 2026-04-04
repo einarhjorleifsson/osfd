@@ -13,8 +13,8 @@ fd_flag_tacsat(
 }
 \arguments{
 \item{tacsat}{A TACSAT data frame as returned by \code{fd_clean_tacsat()}. Must
-contain \code{VE_COU}, \code{VE_REF}, \code{SI_DATIM} (POSIXct), \code{SI_LONG}, \code{SI_LATI},
-and \code{SI_SP}.}
+contain \code{cid} (\code{VE_COU}), \code{vid} (\code{VE_REF}), \code{time} (\code{SI_DATIM}, POSIXct),
+\code{lon} (\code{SI_LONG}), \code{lat} (\code{SI_LATI}), and \code{speed} (\code{SI_SP}).}
 
 \item{minimum_interval_seconds}{Numeric. Minimum permitted time interval
 between consecutive pings for the same vessel, in \strong{seconds}. Default: 30.}
@@ -45,37 +45,37 @@ all of them. Also computes an \code{.intv} column (time in seconds since the
 previous ping for the same vessel) which is used by the interval threshold
 check and is useful downstream.
 
-Expects a data frame as returned by \code{fd_clean_tacsat()} — \code{SI_LONG} and
-\code{SI_LATI} are plain numeric columns at this stage. Data must be sorted by
-\code{VE_REF} and \code{SI_DATIM} (also handled by \code{fd_clean_tacsat()}). The function
-converts to \code{sf} internally for spatial operations, then drops geometry before
-returning.
+Expects a data frame as returned by \code{fd_clean_tacsat()} — \code{lon} (\code{SI_LONG}) and
+\code{lat} (\code{SI_LATI}) are plain numeric columns at this stage. Data must be sorted
+by \code{vid} (\code{VE_REF}) and \code{time} (\code{SI_DATIM}), which \code{fd_clean_tacsat()} handles.
+The function converts to \code{sf} internally for spatial operations, then drops
+geometry before returning.
 
 \strong{This function never filters.} Filtering is deliberately left to the caller:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{tacsat |>
-  fd\\_check\\_tacsat() |>
+  fd\\_flag\\_tacsat() |>
   dplyr::filter(.checks == "ok")
 }\if{html}{\out{</div>}}
 
 Checks are performed in the following order and return the first failure:
 \describe{
+\item{\code{"00 missing coordinates"}}{\code{lon} or \code{lat} is \code{NA} — checked first because
+\code{NA} coordinates would cause \code{sf::st_as_sf()} to error. These records are
+separated before spatial processing and rejoined with this label.}
 \item{\code{"01 point out of (ices) area"}}{Record falls outside the specified area of interest}
 \item{\code{"02 duplicate"}}{Duplicate of a previous record with the same vessel, position, and timestamp}
 \item{\code{"03 time interval too short"}}{Time since previous ping (per vessel) is less than \code{minimum_interval_seconds}}
 \item{\code{"04 in harbour"}}{Record location falls within a harbour buffer zone (3 km radius)}
-\item{\code{"05 no country id"}}{\code{VE_COU} is \code{NA}}
-\item{\code{"06 no vessel id"}}{\code{VE_REF} is \code{NA}}
-\item{\code{"07 no datetime"}}{\code{SI_DATIM} is \code{NA}}
-\item{\code{"08 no speed"}}{\code{SI_SP} is \code{NA}}
+\item{\code{"05 no country id"}}{\code{cid} (\code{VE_COU}) is \code{NA}}
+\item{\code{"06 no vessel id"}}{\code{vid} (\code{VE_REF}) is \code{NA}}
+\item{\code{"07 no datetime"}}{\code{time} (\code{SI_DATIM}) is \code{NA}}
+\item{\code{"08 no speed"}}{\code{speed} (\code{SI_SP}) is \code{NA}}
 \item{\code{"ok"}}{All checks passed}
 }
 
 \strong{Note:} This function is R-only. \code{sf} spatial joins, \code{base::duplicated()},
-and \code{fd_step_time()} are not compatible with lazy/DuckDB backends. Checks
-05–08 (NA guards) come after the spatial operations; records with \code{NA}
-coordinates will cause \code{sf::st_as_sf()} to error — pre-filter those upstream
-if needed.
+and \code{fd_step_time()} are not compatible with lazy/DuckDB backends.
 }
 \examples{
 \dontrun{

@@ -7,41 +7,54 @@
 fd_clean_tacsat(tacsat, remove = TRUE)
 }
 \arguments{
-\item{tacsat}{A data frame in TACSAT format. Must contain \code{VE_COU}, \code{VE_REF},
-\code{SI_DATE}, \code{SI_TIME}, \code{SI_LATI}, \code{SI_LONG}, \code{SI_SP}, and \code{SI_HE}.}
+\item{tacsat}{A data frame in TACSAT format. See \code{fd_check_input()} /
+\code{dictionary} for the full list of required and optional fields.}
 
 \item{remove}{Logical. If \code{TRUE} (default), the raw date/time columns
 \code{SI_DATE} and \code{SI_TIME} are dropped once \code{SI_DATIM} has been constructed.
 Set to \code{FALSE} to retain the originals.}
 }
 \value{
-A data frame sorted by \code{VE_REF} and \code{SI_DATIM}, with:
+A data frame sorted by vessel and datetime, with column names
+translated to short lowercase:
 \describe{
-\item{\code{.pid}}{Integer row identifier (added for downstream diagnostics).}
-\item{\code{SI_DATIM}}{POSIXct timestamp (UTC) parsed from \code{SI_DATE} + \code{SI_TIME}.}
+\item{\code{.pid}}{Integer row identifier.}
+\item{\code{cid}}{Vessel flag country (\code{VE_COU}).}
+\item{\code{vid}}{Vessel identifier (\code{VE_REF}).}
+\item{\code{lat}}{Latitude (\code{SI_LATI}).}
+\item{\code{lon}}{Longitude (\code{SI_LONG}).}
+\item{\code{time}}{POSIXct timestamp (UTC), parsed from \code{SI_DATE} + \code{SI_TIME} (\code{SI_DATIM}).}
+\item{\code{speed}}{Instantaneous speed in knots (\code{SI_SP}).}
+\item{\code{heading}}{Instantaneous heading in degrees (\code{SI_HE}).}
 }
 \code{SI_DATE} and \code{SI_TIME} are removed by default.
 }
 \description{
 One call to rule them all (for TACSAT, at least). Does the following in order:
 \enumerate{
-\item Checks that all required columns are present.
+\item Validates required columns and checks for coercion problems via
+\code{fd_check_input()}.
 \item Coerces \code{SI_LATI}, \code{SI_LONG}, \code{SI_SP}, and \code{SI_HE} to numeric.
 \item Parses \code{SI_DATE} + \code{SI_TIME} into a single \code{SI_DATIM} POSIXct column and
-drops the originals — because two columns are strictly worse than one.
-\item Sorted by \code{VE_REF} then \code{SI_DATIM} — the order that interval calculations
+drops the originals -- because two columns are strictly worse than one.
+\item Sorts by \code{VE_REF} then \code{SI_DATIM} -- the order that interval calculations
 downstream depend on.
+\item Adds \code{.pid} (integer row identifier).
+\item Translates column names to short lowercase equivalents via
+\code{fd_translate()} -- see the return section for the mapping.
 }
 
 After this call, \code{SI_DATE} and \code{SI_TIME} are gone (unless \code{remove = FALSE}).
 
 \strong{Note:} This function is R-only. \code{paste()}, \code{lubridate::dmy_hms()}, and
-\code{dplyr::row_number()} inside \code{arrange()} + \code{mutate()} are not compatible with
-lazy/DuckDB backends.
+\code{dplyr::row_number()} are not compatible with lazy/DuckDB backends.
 }
 \examples{
 \dontrun{
 tacsat <- fd_clean_tacsat(tacsat)
 }
 
+}
+\seealso{
+\code{\link[=fd_check_input]{fd_check_input()}} for the preflight validation step.
 }

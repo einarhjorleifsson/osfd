@@ -7,13 +7,14 @@
 fd_flag_eflalo(eflalo, year = NULL, gear = NULL, met6 = NULL)
 }
 \arguments{
-\item{eflalo}{A data frame in EFLALO format. Must contain \code{VE_COU}, \code{VE_REF},
-\code{VE_LEN}, \code{VE_KW}, \code{VE_TON}, \code{FT_REF}, \code{FT_DDATIM}, \code{FT_LDATIM} (POSIXct),
-\code{LE_ID}, \code{LE_CDAT} (Date), \code{LE_GEAR}, and \code{LE_MET}.
-Run \code{fd_clean_eflalo()} before calling this.}
+\item{eflalo}{A data frame in EFLALO format as returned by \code{fd_clean_eflalo()}.
+Must contain \code{cid} (\code{VE_COU}), \code{vid} (\code{VE_REF}), \code{length} (\code{VE_LEN}),
+\code{kw} (\code{VE_KW}), \code{gt} (\code{VE_TON}), \code{tid} (\code{FT_REF}), \code{T1} (\code{FT_DDATIM},
+POSIXct), \code{T2} (\code{FT_LDATIM}, POSIXct), \code{lid} (\code{LE_ID}), \code{date} (\code{LE_CDAT},
+Date), \code{gear} (\code{LE_GEAR}), and \code{met6} (\code{LE_MET}).}
 
-\item{year}{Integer. Submission year. When supplied, records with
-\code{FT_DDATIM} before 1 January of this year are flagged. If \code{NULL} (default),
+\item{year}{Integer. Submission year. When supplied, records with \code{T1}
+(\code{FT_DDATIM}) before 1 January of this year are flagged. If \code{NULL} (default),
 the check is skipped.}
 
 \item{gear}{Character vector of valid ICES gear codes (metier level 4).
@@ -35,14 +36,14 @@ all of them.
 \strong{This function never filters.} Filtering is deliberately left to the caller:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{osfd::eflalo |>
-  fd\\_setup\\_eflalo() |>
-  fd\\_check\\_eflalo() |>
+  fd\\_clean\\_eflalo() |>
+  fd\\_flag\\_eflalo() |>
   dplyr::filter(.checks == "ok")
 }\if{html}{\out{</div>}}
 
-The function assumes \code{FT_DDATIM}, \code{FT_LDATIM} (POSIXct), and \code{LE_CDAT}
-(Date) are already present — run \code{fd_clean_eflalo()} first and it handles
-all of that so you don't have to.
+The function assumes \code{T1} (\code{FT_DDATIM}), \code{T2} (\code{FT_LDATIM}, POSIXct), and
+\code{date} (\code{LE_CDAT}, Date) are already present — run \code{fd_clean_eflalo()} first
+and it handles all of that so you don't have to.
 
 Trip overlap detection is delegated to \code{\link{fd_flag_trips}} (via
 \code{\link{fd_trips}}), then joined back to flag individual events whose
@@ -50,24 +51,24 @@ trip is overlapping.
 
 Checks are performed in the following order and return the first failure:
 \describe{
-\item{\code{"01 duplicated events"}}{Duplicate row with the same \code{VE_REF}, \code{LE_ID}, and \code{LE_CDAT}}
-\item{\code{"02 impossible time"}}{\code{FT_DDATIM} or \code{FT_LDATIM} is \code{NA}}
+\item{\code{"01 duplicated events"}}{Duplicate row with the same \code{vid} (\code{VE_REF}), \code{lid} (\code{LE_ID}), and \code{date} (\code{LE_CDAT})}
+\item{\code{"02 impossible time"}}{\code{T1} (\code{FT_DDATIM}) or \code{T2} (\code{FT_LDATIM}) is \code{NA}}
 \item{\code{"03 new years trip"}}{Departure year is exactly one less than landing year (trip crosses year boundary)}
-\item{\code{"04 departure after arrival"}}{\code{FT_DDATIM > FT_LDATIM} — time travel not supported}
-\item{\code{"05 departure equals arrival"}}{\code{FT_DDATIM == FT_LDATIM} — a trip of zero duration}
-\item{\code{"06 overlapping trips"}}{\code{FT_DDATIM} falls before \code{FT_LDATIM} of the previous trip for the same vessel}
-\item{\code{"07 gear (metier 4) invalid"}}{\code{LE_GEAR} not in \code{gear} vector (skipped if \code{gear = NULL})}
-\item{\code{"08 metier 6 invalid"}}{\code{LE_MET} not in \code{met6} vector (skipped if \code{met6 = NULL})}
-\item{\code{"09 catch date before departure"}}{\code{LE_CDAT} precedes \code{FT_DDATIM} (informational)}
-\item{\code{"10 catch date after arrival"}}{\code{LE_CDAT} is later than \code{FT_LDATIM} (informational)}
-\item{\code{"11 no vessel length"}}{\code{VE_LEN} is \code{NA} (informational)}
-\item{\code{"12 no engine power"}}{\code{VE_KW} is \code{NA} (informational)}
+\item{\code{"04 departure after arrival"}}{\code{T1 > T2} — time travel not supported}
+\item{\code{"05 departure equals arrival"}}{\code{T1 == T2} — a trip of zero duration}
+\item{\code{"06 overlapping trips"}}{\code{T1} falls before \code{T2} of the previous trip for the same vessel}
+\item{\code{"07 gear (metier 4) invalid"}}{\code{gear} (\code{LE_GEAR}) not in \code{gear} vector (skipped if \code{gear = NULL})}
+\item{\code{"08 metier 6 invalid"}}{\code{met6} (\code{LE_MET}) not in \code{met6} vector (skipped if \code{met6 = NULL})}
+\item{\code{"09 catch date before departure"}}{\code{date} (\code{LE_CDAT}) precedes \code{T1} (\code{FT_DDATIM}) (informational)}
+\item{\code{"10 catch date after arrival"}}{\code{date} (\code{LE_CDAT}) is later than \code{T2} (\code{FT_LDATIM}) (informational)}
+\item{\code{"11 no vessel length"}}{\code{length} (\code{VE_LEN}) is \code{NA} (informational)}
+\item{\code{"12 no engine power"}}{\code{kw} (\code{VE_KW}) is \code{NA} (informational)}
 \item{\code{"ok"}}{All checks passed}
 }
 
-Labels prefixed \code{"ok - ..."} are informational. Records with these labels
-survive \code{dplyr::filter(startsWith(.checks, "ok"))} but are dropped by
-\code{dplyr::filter(.checks == "ok")} if you want to be strict.
+Checks 09–12 are informational: they flag records that may warrant review
+but are not necessarily errors. Use \code{dplyr::filter(.checks == "ok")} to
+exclude all flagged records, or inspect specific check labels as needed.
 }
 \examples{
 \dontrun{

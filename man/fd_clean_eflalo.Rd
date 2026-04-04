@@ -7,10 +7,8 @@
 fd_clean_eflalo(eflalo, remove = TRUE)
 }
 \arguments{
-\item{eflalo}{A data frame in EFLALO format. Must contain \code{VE_KW}, \code{VE_LEN},
-\code{VE_TON}, \code{LE_MSZ}, \code{LE_CDAT}, \code{FT_DDAT}, \code{FT_DTIME}, \code{FT_LDAT}, and
-\code{FT_LTIME}. \code{LE_STIME} and \code{LE_ETIME} (\code{"HH:MM"} character) are used if
-present.}
+\item{eflalo}{A data frame in EFLALO format. See \code{fd_check_input()} /
+\code{dictionary} for the full list of required and optional fields.}
 
 \item{remove}{Logical. If \code{TRUE} (default), the raw date/time columns
 \code{FT_DDAT}, \code{FT_DTIME}, \code{FT_LDAT}, and \code{FT_LTIME} are dropped once
@@ -18,46 +16,55 @@ present.}
 coerced from character to Date. Set to \code{FALSE} to retain the originals.}
 }
 \value{
-The input \code{eflalo} as a tibble with:
+The input \code{eflalo} as a tibble with column names translated to short
+lowercase via \code{fd_translate()}. Key columns:
 \describe{
-\item{\code{.eid}}{Integer row identifier (positioned before \code{LE_ID}).}
-\item{\code{.tid}}{Integer trip identifier (positioned before \code{VE_REF}).}
-\item{\code{FT_DDATIM}}{POSIXct departure datetime (UTC).}
-\item{\code{FT_LDATIM}}{POSIXct landing datetime (UTC).}
-\item{\code{LE_CDAT}}{Date, re-parsed from \code{"DD/MM/YYYY"} character.}
-\item{\code{t1}}{POSIXct event start (UTC).}
-\item{\code{t2}}{POSIXct event end (UTC).}
-\item{\code{.tsrc}}{Character. Derivation source for \code{t1}/\code{t2}:
-\code{"data"} (both times present, same day),
-\code{"next day"} (start > end, so \code{t2} rolls to next day),
-\code{"dummy"} (\code{LE_CDAT} present but one/both times \code{NA}; \code{t1 = 00:01}, \code{t2 = 23:59}),
-or \code{NA} (\code{LE_CDAT} itself is \code{NA}).}
+\item{\code{.tid}}{Integer trip identifier (positioned before \code{vid}).}
+\item{\code{vid}}{Vessel identifier (\code{VE_REF}).}
+\item{\code{cid}}{Vessel flag country (\code{VE_COU}).}
+\item{\code{length}}{Vessel length (\code{VE_LEN}).}
+\item{\code{kw}}{Engine power (\code{VE_KW}).}
+\item{\code{gt}}{Vessel tonnage (\code{VE_TON}).}
+\item{\code{tid}}{Fishing trip reference (\code{FT_REF}).}
+\item{\code{T1}}{POSIXct departure datetime (UTC) (\code{FT_DDATIM}).}
+\item{\code{T2}}{POSIXct landing datetime (UTC) (\code{FT_LDATIM}).}
+\item{\code{.eid}}{Integer row identifier (positioned before \code{lid}).}
+\item{\code{lid}}{Log event identifier (\code{LE_ID}).}
+\item{\code{date}}{Catch date, re-parsed from \code{"DD/MM/YYYY"} (\code{LE_CDAT}).}
+\item{\code{gear}}{Gear code (\code{LE_GEAR}).}
+\item{\code{mesh}}{Mesh size (\code{LE_MSZ}).}
+\item{\code{ir}}{ICES statistical rectangle (\code{LE_RECT}).}
+\item{\code{t1}}{POSIXct event start (UTC), if \code{LE_STIME}/\code{LE_ETIME} present.}
+\item{\code{t2}}{POSIXct event end (UTC), if \code{LE_STIME}/\code{LE_ETIME} present.}
+\item{\code{.tsrc}}{Derivation source for \code{t1}/\code{t2}, if \code{LE_STIME}/\code{LE_ETIME} present.}
 }
 Numeric columns (\code{VE_KW}, \code{VE_LEN}, \code{VE_TON}, \code{LE_MSZ}, all \code{KG}/\code{EURO}
 columns) are coerced to numeric. If \code{remove = TRUE}, the raw date/time
-columns are absent.
+columns (\code{FT_DDAT}, \code{FT_DTIME}, \code{FT_LDAT}, \code{FT_LTIME}, \code{LE_STIME},
+\code{LE_ETIME}) are absent from the output.
 }
 \description{
-Checks that the required vessel, trip, and catch columns are present in an
-EFLALO data frame, then gets the types right so nothing downstream has to
-guess: numeric columns are coerced to numeric; \code{FT_DDATIM} and \code{FT_LDATIM}
-are constructed from the raw date/time string columns; and \code{LE_CDAT} is
-re-parsed from its character form (\code{"DD/MM/YYYY"}) to an R Date.
+Checks that the required vessel, trip, and event columns are present in an
+EFLALO data frame (via \code{fd_check_input()}), then gets the types right so
+nothing downstream has to guess: numeric columns are coerced to numeric;
+\code{FT_DDATIM} and \code{FT_LDATIM} are constructed from the raw date/time string
+columns; and \code{LE_CDAT} is re-parsed from its character form (\code{"DD/MM/YYYY"})
+to an R Date.
 
 Two internal key columns are also added:
 \describe{
-\item{\code{.eid}}{Integer row number — a stable event identifier for downstream joins.}
+\item{\code{.eid}}{Integer row number -- a stable event identifier for downstream joins.}
 \item{\code{.tid}}{Integer trip identifier via \code{dplyr::consecutive_id()} on all
 trip-defining columns.}
 }
 
 Event-level datetimes are derived from \code{LE_CDAT}, \code{LE_STIME}, and \code{LE_ETIME}
-(the latter two are character \code{"HH:MM"} in the raw file):
+(the latter two are character \code{"HH:MM"} in the raw file) if both are present:
 \describe{
 \item{\code{t1}}{Event start (POSIXct, UTC).}
 \item{\code{t2}}{Event end (POSIXct, UTC).}
-\item{\code{.tsrc}}{How \code{t1}/\code{t2} were derived — \code{"data"}, \code{"next day"},
-\code{"dummy"}, or \code{NA}. See Details.}
+\item{\code{.tsrc}}{How \code{t1}/\code{t2} were derived -- \code{"data"}, \code{"next day"},
+\code{"dummy"}, or \code{NA}.}
 }
 
 \strong{Note:} This function is R-only. \code{paste()}, \code{lubridate::dmy_hms()},
@@ -70,4 +77,7 @@ eflalo <- fd_clean_eflalo(eflalo)
 eflalo <- fd_clean_eflalo(eflalo, remove = FALSE) # keep the raw columns
 }
 
+}
+\seealso{
+\code{\link[=fd_check_input]{fd_check_input()}} for the preflight validation step.
 }

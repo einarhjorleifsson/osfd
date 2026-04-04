@@ -7,10 +7,9 @@
 fd_tidy_eflalo(eflalo)
 }
 \arguments{
-\item{eflalo}{A data frame containing EFLALO data with vessel, trip, and
-event columns. Must include columns with prefixes \code{VE_} (vessel),
-\code{FT_} (fishing trip), and \code{LE_} (fishing event), plus \code{.eid} and \code{.tid}
-added by \code{fd_clean_eflalo()}.}
+\item{eflalo}{A data frame as returned by \code{fd_clean_eflalo()}. Must include
+the renamed vessel and trip columns (\code{vid}, \code{tid}, \code{T1}, \code{T2}, etc.), event
+columns (\code{.eid}, \code{lid}, \code{date}, \code{gear}, etc.), and the \code{.tid} internal key.}
 }
 \value{
 A list with two elements:

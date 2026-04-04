@@ -10,3 +10,6 @@ README.Rmd
 _garbage
 ^vignettes/articles$
 ^AGENTS\.md$
+^_R$
+^_articles$
+^docs$

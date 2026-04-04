@@ -8,11 +8,11 @@ fd_flag_trips(trips)
 }
 \arguments{
 \item{trips}{A data frame containing fishing trip data with at minimum the
-following columns: \code{VE_COU} (vessel country), \code{VE_REF} (vessel reference),
-\code{FT_DDATIM} (departure date/time), \code{FT_LDATIM} (landing date/time),
-\code{VE_LEN}, and \code{VE_KW}. Typically produced by \code{\link{fd_trips}}.
-Input must be sorted by \code{FT_DDATIM} within each vessel (handled by
-\code{fd_clean_eflalo()}).}
+following columns: \code{cid} (\code{VE_COU}, vessel country), \code{vid} (\code{VE_REF}, vessel
+reference), \code{T1} (\code{FT_DDATIM}, departure date/time), \code{T2} (\code{FT_LDATIM},
+landing date/time), \code{length} (\code{VE_LEN}), and \code{kw} (\code{VE_KW}). Typically
+produced by \code{\link{fd_trips}}. Input must be sorted by \code{T1} within
+each vessel (handled by \code{fd_clean_eflalo()}).}
 }
 \value{
 The input data frame with a \code{.tchecks} character column appended.
@@ -26,20 +26,20 @@ is typically applied after extracting trips with \code{\link{fd_trips}}.
 \strong{This function never filters.} Filtering is deliberately left to the caller:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{trips |>
-  fd\\_check\\_trips() |>
+  fd\\_flag\\_trips() |>
   dplyr::filter(.tchecks == "ok")
 }\if{html}{\out{</div>}}
 
 Checks are performed in the following order and return the first failure:
 \describe{
-\item{\code{"01 departure missing"}}{\code{FT_DDATIM} is \code{NA}}
-\item{\code{"02 arrival missing"}}{\code{FT_LDATIM} is \code{NA}}
-\item{\code{"03 departure after arrival"}}{\code{FT_DDATIM > FT_LDATIM} — time travel not supported}
-\item{\code{"04 departure equals arrival"}}{\code{FT_DDATIM == FT_LDATIM} — a trip of zero duration}
+\item{\code{"01 departure missing"}}{\code{T1} (\code{FT_DDATIM}) is \code{NA}}
+\item{\code{"02 arrival missing"}}{\code{T2} (\code{FT_LDATIM}) is \code{NA}}
+\item{\code{"03 departure after arrival"}}{\code{T1 > T2} — time travel not supported}
+\item{\code{"04 departure equals arrival"}}{\code{T1 == T2} — a trip of zero duration}
 \item{\code{"05 next departure before current arrival"}}{Temporal overlap: the next trip departs before this one lands}
 \item{\code{"06 previous arrival after current departure"}}{Temporal overlap: the previous trip's landing is after this departure}
-\item{\code{"07 no vessel length"}}{\code{VE_LEN} is \code{NA} (informational — required for gear width and swept area)}
-\item{\code{"08 no engine power"}}{\code{VE_KW} is \code{NA} (informational — gear width falls back to lookup table defaults)}
+\item{\code{"07 no vessel length"}}{\code{length} (\code{VE_LEN}) is \code{NA} (informational — required for gear width and swept area)}
+\item{\code{"08 no engine power"}}{\code{kw} (\code{VE_KW}) is \code{NA} (informational — gear width falls back to lookup table defaults)}
 \item{\code{"ok"}}{All checks passed}
 }
 }

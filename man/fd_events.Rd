@@ -7,18 +7,30 @@
 fd_events(eflalo)
 }
 \arguments{
-\item{eflalo}{A data frame containing EFLALO data. Must include columns with
-prefixes \code{VE_} (vessel), \code{FT_} (fishing trip), and \code{LE_} (fishing event),
-plus the \code{.eid} and \code{.tid} columns added by \code{fd_clean_eflalo()}. If
+\item{eflalo}{A data frame as returned by \code{fd_clean_eflalo()}. Must include
+\code{.eid} (\code{.eid}), \code{lid} (\code{LE_ID}), \code{date} (\code{LE_CDAT}), gear columns
+(\code{gear}, \code{mesh}, \code{ir}, \code{fao}, \code{met6}), and the \code{.tid} internal key. If
 \code{fd_clean_eflalo()} was run first, \code{t1}, \code{t2}, and \code{.tsrc} (event
-datetimes derived from \code{LE_CDAT}/\code{LE_STIME}/\code{LE_ETIME}) will already be
-present and are passed through.}
+datetimes derived from \code{date} (\code{LE_CDAT}) / \code{LE_STIME} / \code{LE_ETIME}) will
+already be present and are passed through.}
 }
 \value{
-A data frame containing fishing events with \code{.eid}, all \verb{LE_*}
-columns, \code{.tid}, and — if \code{fd_clean_eflalo()} was run upstream — \code{t1},
-\code{t2}, and \code{.tsrc}. All \verb{LE_KG_*} and \verb{LE_EURO_*} catch columns are
-retained.
+A data frame containing fishing events with:
+\describe{
+\item{.eid}{Row identifier (\code{.eid})}
+\item{lid}{Log event identifier (\code{LE_ID})}
+\item{date}{Catch date, Date (\code{LE_CDAT})}
+\item{lat1, lon1, lat2, lon2}{Event start/end coordinates, if present (\code{LE_SLAT}, \code{LE_SLON}, \code{LE_ELAT}, \code{LE_ELON})}
+\item{gear}{Gear code, metier level 4 (\code{LE_GEAR})}
+\item{mesh}{Mesh size, mm (\code{LE_MSZ})}
+\item{ir}{ICES statistical rectangle (\code{LE_RECT})}
+\item{fao}{ICES division (\code{LE_DIV})}
+\item{met6}{Metier level 6 (\code{LE_MET})}
+\item{LE_STIME, LE_ETIME}{Event start/end time strings, if present (unchanged)}
+\item{LE_KG_\emph{, LE_EURO_}}{Species catch weight and value columns (unchanged)}
+\item{t1, t2, .tsrc}{Event datetimes and their derivation source, if present}
+\item{.tid}{Internal trip identifier (unchanged)}
+}
 }
 \description{
 Selects fishing event variables from an EFLALO dataset and raises an error

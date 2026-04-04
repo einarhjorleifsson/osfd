@@ -216,4 +216,4 @@
 #' documented from `fd_clean_tacsat()` and `fd_clean_eflalo()` source code.
 #' Built via `data-raw/DATASET_field_definitions.R`.
 #'
-"field_definitions"
+"dictionary"
