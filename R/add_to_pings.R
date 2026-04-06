@@ -10,10 +10,11 @@
 #'   `fd_clean_tacsat()`. Must contain `cid`, `vid`, and `time` (POSIXct).
 #' @param trips A data frame of fishing trips as returned by `fd_trips()`.
 #'   Must contain `cid`, `vid`, `tid`, `T1`, and `T2`.
-#' @param cn Character vector of additional column names from `trips` to carry
-#'   across to `ais`. `tid` and `.tid` is always included. `cid` and `vid` are implicit
-#'   join keys; `T1` and `T2` are used for the time-overlap join and removed
-#'   when `remove = TRUE`. Default: `"tid"`.
+#' @param cn Character vector of column names from `trips` to carry across to
+#'   `ais`. `"tid"` and `".tid"` are always included regardless of what is
+#'   passed here. `cid` and `vid` are implicit join keys; `T1` and `T2` are
+#'   used for the time-overlap join and removed when `remove = TRUE`.
+#'   Default: `c("tid", ".tid")`.
 #' @param remove Logical. If `TRUE` (default), removes `T1` and `T2` from the
 #'   output after the join.
 #'

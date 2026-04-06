@@ -5,7 +5,7 @@
 \alias{harbours}
 \title{Harbour locations}
 \format{
-An \code{sf} data frame with 3,839 rows and 5 variables:
+A tibble with 3,839 rows and 4 variables:
 \describe{
 \item{harbour}{Harbour name (character)}
 \item{lon}{Longitude of harbour centroid, decimal degrees (numeric)}
@@ -14,7 +14,7 @@ An \code{sf} data frame with 3,839 rows and 5 variables:
 }
 }
 \source{
-\code{vmstools} R package. Processed for \code{osfd} via \code{data-raw/DATASET_vnstools.R}.
+\code{vmstools} R package. Processed for \code{osfd} via \code{data-raw/DATASET_vmstools.R}.
 }
 \usage{
 harbours

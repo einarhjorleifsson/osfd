@@ -5,12 +5,12 @@
 \alias{fd_dictionary}
 \title{Field definitions for TACSAT2 and EFLALO2}
 \format{
-A tibble with 47 rows and 7 variables:
+A tibble with 47 rows and 8 variables:
 \describe{
-\item{\code{field}}{Variable name in R (character). Species-specific columns
-are represented as \verb{LE_KG_<SP>} and \verb{LE_EURO_<SP>}.}
-\item{\code{table}}{Which table the field belongs to: \code{"tacsat"}, \code{"eflalo"},
-or \code{"both"} (character).}
+\item{\code{old}}{Variable name in the raw ICES file (character). Species-specific
+columns are represented as \verb{LE_KG_<SP>} and \verb{LE_EURO_<SP>}.}
+\item{\code{table}}{Which table the field belongs to: \code{"tacsat"} or \code{"eflalo"}
+(character).}
 \item{\code{type}}{Expected R type after import / cleaning: \code{"chr"}, \code{"dbl"},
 \code{"int"}, \code{"dttm"}, \code{"date"}, or \code{"lgl"} (character).}
 \item{\code{format}}{Raw format in the original file, e.g. \code{"DD/MM/YYYY"} or
@@ -21,6 +21,8 @@ data-call; \code{FALSE} if optional (logical).}
 \item{\code{derived}}{\code{TRUE} if the field is added or transformed by
 \code{fd_clean_tacsat()} / \code{fd_clean_eflalo()}; \code{FALSE} if present in the
 raw file (logical).}
+\item{\code{new}}{Output column name after \code{\link[=fd_translate]{fd_translate()}} is applied
+(character). Equals \code{old} for fields that are not renamed.}
 }
 }
 \source{

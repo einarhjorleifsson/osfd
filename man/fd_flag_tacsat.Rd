@@ -23,11 +23,13 @@ between consecutive pings for the same vessel, in \strong{seconds}. Default: 30.
 \item{areas}{A spatial object (sf) containing the area of interest. Records outside this area
 fail the check.}
 
-\item{ports}{A spatial object (sf) containing port locations. If not
-already an sf object, it should have \code{lon} and \code{lat} columns. Ports are
-automatically buffered to 3 km radius and converted to Web Mercator
-(EPSG:3857) for accurate distance calculations before being transformed
-back to WGS84 (EPSG:4326). Default: \code{osfd::harbours}.}
+\item{ports}{A spatial object (\code{sf}) containing port locations. Required —
+no default; the function stops with an error if missing. If not already an
+\code{sf} object, \code{ports} must have \code{lon} and \code{lat} columns and will be
+converted internally. Ports are automatically buffered to a 3 km radius
+using Web Mercator (EPSG:3857) for accurate distance calculations before
+being transformed back to WGS84 (EPSG:4326). \code{osfd::harbours} is a
+suitable input for European fleets.}
 
 \item{no_hands}{Logical. Controls whether failing records are automatically
 removed from the output. When \code{TRUE} (default, production mode), records
@@ -38,7 +40,7 @@ returned with \code{.checks} and \code{.intv} appended so you can inspect failur
 \value{
 \itemize{
 \item \code{no_hands = TRUE} (default): The input data frame filtered to passing
-records only, with \code{.intv} appended and \code{.checks} dropped.
+records only. Both \code{.checks} and \code{.intv} are dropped before returning.
 \item \code{no_hands = FALSE}: The full input data frame (geometry dropped) with
 two new columns appended:
 \describe{

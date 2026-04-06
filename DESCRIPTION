@@ -21,10 +21,10 @@ Suggests:
     duckdbfs,
     icesConnect,
     icesVMS,
+    icesVocab,
     knitr,
     rmarkdown,
     sfdSAR,
-    stringr,
     testthat (>= 3.0.0),
     tibble,
     vmstools

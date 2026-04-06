@@ -13,10 +13,11 @@ fd_add_trips(ais, trips, cn = c("tid", ".tid"), remove = TRUE)
 \item{trips}{A data frame of fishing trips as returned by \code{fd_trips()}.
 Must contain \code{cid}, \code{vid}, \code{tid}, \code{T1}, and \code{T2}.}
 
-\item{cn}{Character vector of additional column names from \code{trips} to carry
-across to \code{ais}. \code{tid} and \code{.tid} is always included. \code{cid} and \code{vid} are implicit
-join keys; \code{T1} and \code{T2} are used for the time-overlap join and removed
-when \code{remove = TRUE}. Default: \code{"tid"}.}
+\item{cn}{Character vector of column names from \code{trips} to carry across to
+\code{ais}. \code{"tid"} and \code{".tid"} are always included regardless of what is
+passed here. \code{cid} and \code{vid} are implicit join keys; \code{T1} and \code{T2} are
+used for the time-overlap join and removed when \code{remove = TRUE}.
+Default: \code{c("tid", ".tid")}.}
 
 \item{remove}{Logical. If \code{TRUE} (default), removes \code{T1} and \code{T2} from the
 output after the join.}

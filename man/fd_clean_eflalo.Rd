@@ -8,7 +8,7 @@ fd_clean_eflalo(eflalo, remove = TRUE)
 }
 \arguments{
 \item{eflalo}{A data frame in EFLALO format. See \code{fd_check_input()} /
-\code{dictionary} for the full list of required and optional fields.}
+\code{fd_dictionary} for the full list of required and optional fields.}
 
 \item{remove}{Logical. If \code{TRUE} (default), the raw date/time columns
 \code{FT_DDAT}, \code{FT_DTIME}, \code{FT_LDAT}, and \code{FT_LTIME} are dropped once

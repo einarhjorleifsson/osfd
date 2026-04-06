@@ -62,7 +62,7 @@ species code (e.g. \code{LE_KG_COD}, \code{LE_EURO_SOL}).
 \source{
 \code{vmstools} R package, EU Lot 2 project.
 Contact: Niels T. Hintzen \email{niels.hintzen@wur.nl}.
-Modified for \code{osfd} via \code{data-raw/DATASET_vnstools.R}.
+Modified for \code{osfd} via \code{data-raw/DATASET_vmstools.R}.
 }
 \usage{
 eflalo

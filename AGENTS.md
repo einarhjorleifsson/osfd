@@ -5,8 +5,10 @@
 **osfd** (`Spatial Fisheries Data Tools`) consolidates functions for the ICES WGSFD VMS and logbook data-call workflow. The primary author is Einar Hjörleifsson.
 
 - GitHub: https://github.com/einarhjorleifsson/osfd
-- Core dependencies: `dplyr`, `tidyr`, `lubridate`, `sf`, `stringr`, `icesVocab`
-- Optional: `duckdbfs`, `icesConnect`, `icesVMS`, `vmstools`, `sfdSAR`
+- Core dependencies: `dplyr`, `tidyr`, `lubridate`, `sf`
+- Optional (Suggests): `duckdbfs`, `icesConnect`, `icesVMS`, `vmstools`, `sfdSAR`, `stringr`, `testthat`, `tibble`, `knitr`, `rmarkdown`
+- `icesVocab` — listed in `Remotes` but not in `Imports` or `Suggests`. Used only in documentation examples (`icesVocab::getCodeList()`) and `data-raw/`. No package source code calls it directly. Should be added to `Suggests`.
+- `stringr` — present in `Suggests` in DESCRIPTION but not used anywhere in `R/` source files. Likely a leftover; candidate for removal.
 
 ## Data Sources
 
@@ -86,7 +88,7 @@ Columns added temporarily inside a function and dropped before returning (e.g. `
 | `R/trail_steps.R` | `fd_step_time()`, `fd_interval_seconds()` | Ping interval calculation |
 | `R/add_to_pings.R` | `fd_add_trips()`, `fd_add_events()`, `fd_check_events_join()` | Ping enrichment: trip and event joins |
 | `R/gear.R` | `fd_benthis_lookup()`, `fd_add_gearwidth()`, `fd_add_sa()` | Gear width prediction and swept area |
-| `R/geo.R` | `d2ir()`, `fd_calc_csq()`, `csq2lonlat()`, `fd_add_sf()` | Coordinate/spatial utilities; `d2ir()` and `fd_calc_csq()` are dbplyr-compatible; `fd_add_sf()` is R-only |
+| `R/geo.R` | `d2ir()`, `fd_calc_csq()`, `csq2lonlat()`, `csq_area()`, `fd_add_sf()` | Coordinate/spatial utilities; `d2ir()` and `fd_calc_csq()` are dbplyr-compatible; `fd_add_sf()` is R-only |
 | `R/state.R` | `fd_add_state()` | Ping state classification (fishing vs. steaming) — stub |
 | `R/utils.R` | `fd_translate()` | Column name translation utility |
 | `R/data.R` | Dataset documentation | |
@@ -264,6 +266,26 @@ Decodes a c-square code to the **centre coordinates** of the cell at the request
 - Returns exact cell centres; the vmstools `CSquare2LonLat()` it replaces returns centres offset by ~1e-5° due to an Excel-rounding hack (`ra = 1e-6`)
 - Input codes must be at the requested `degrees` resolution or finer
 
+### `csq_area(csq, resolution = NULL)`
+Returns the geodetic area (km²) of a c-square cell using a spherical-Earth approximation.
+
+- Area formula: `resolution² × cos(lat × π/180) × 111.1942²`, where `lat` is the cell-centre latitude from `csq2lonlat()`
+- `resolution` can be supplied explicitly or inferred automatically from `nchar(csq)`:
+
+| `nchar(csq)` | Resolution |
+|---|---|
+| 4  | 10°   |
+| 6  | 5°    |
+| 8  | 1°    |
+| 10 | 0.5°  |
+| 12 | 0.1°  |
+| 14 | 0.05° |
+| 16 | 0.01° |
+
+- All codes in a vector must share the same resolution; supply `resolution` explicitly if that cannot be guaranteed
+- Returns `NA` where `csq` is `NA`
+- **R-only** (calls `csq2lonlat()`)
+
 ### `fd_add_sf(ais, shape)`
 Spatially joins an `sf` polygon layer onto AIS/VMS pings. Converts `ais` to an `sf` point object (using `lon` / `lat`, CRS 4326) if not already `sf`, then applies `sf::st_join()`. S2 geometry is disabled for the duration of the call and restored on exit.
 - `shape` must be an `sf` object (stops with an error otherwise)
@@ -344,22 +366,25 @@ Joins VMS/AIS pings (`ais`) with trip windows (`trips`) by vessel identity and t
 - `cn`: columns to carry across from `trips`; `"tid"` and `".tid"` are always included; extras validated before the join
 - Row-count guard stops with an informative message if overlapping trips cause a ping to match more than one trip (directs user to `fd_flag_trips()`)
 
-### `fd_add_events(ais, events)`
+### `fd_add_events(ais, events, resolve = FALSE)`
 
 Joins pings (after `fd_add_trips()`) with fishing events by `.tid` and time interval (`between(time, t1, t2)`). All event columns are carried across; pings outside any event window receive `NA`.
 
 - `ais`: output of `fd_add_trips()` — requires `.tid` and `time`
 - `events`: output of `fd_events()` / `fd_flag_events()` — requires `.tid`, `t1`, `t2`
 - Intended relationship is many-to-one: each ping should fall within at most one event window per trip
-- Row-count guard stops with an informative error if any ping matches more than one event (directs user to `fd_check_events_join()`)
-- ⚠️ Events with `.tsrc = "dummy"` span the full day (`t1 = 00:01`, `t2 = 23:59`). If multiple events share the same date within a trip, every ping on that date will match all of them — a many-to-many conflict the guard will catch
+- Row-count guard stops with an informative error if any ping matches more than one event, directing to `fd_check_events_join()` and suggesting `resolve = TRUE`
+- `resolve = FALSE` (default): stops on any conflict
+- `resolve = TRUE`: attempts automatic resolution of dummy-time conflicts before joining — for each `.tid × date` group with multiple dummy events, keeps the one with the highest `LE_KG_TOT` (first record by `.eid` on ties); non-dummy events are never dropped; a message reports how many events were removed. If conflicts persist after resolution (non-dummy overlapping windows), the function still errors.
+- ⚠️ `resolve = TRUE` requires a `.tsrc` column in `events`; stops with an informative error if absent
+- ⚠️ Events with `.tsrc = "dummy"` span the full day (`t1 = 00:01`, `t2 = 23:59`). If multiple events share the same date within a trip, every ping on that date will match all of them — a many-to-many conflict the guard will catch; use `resolve = TRUE` for automatic handling
 
 ### `fd_check_events_join(ais, events)`
 
 Developer diagnostic for `fd_add_events()` join conflicts. Performs the join without a relationship constraint and returns only the rows where a ping matched more than one event (each such ping appears once per matched event).
 
 - Makes no assumptions about the *cause* of the conflict — surfaces whatever produces the bloat (overlapping real times, identical dummy windows, soft duplicates, etc.)
-- Prints a summary message: number of affected pings and trips
+- Prints a summary message: number of affected pings and trips, plus a hint to use `resolve = TRUE` if dummy-time events are the cause
 - Returns an empty tibble invisibly (with a message) when no conflicts exist
 - Typical usage after `fd_add_events()` errors:
   ```r
@@ -492,8 +517,10 @@ No test files exist yet. The `tests/testthat/` directory is empty.
 - [ ] **`fd_add_state()` needs hardening**: finalise join key (currently relies on implicit `by`), replace placeholder label `"something else"`, add proper Roxygen documentation
 - [ ] **`fd_add_sf()` error message**: replace `stop("Screeeeeam")` with an informative message explaining the row-count inflation and suggesting `largest = TRUE` or polygon pre-dissolution
 - [ ] Write tests (`tests/testthat/`) — priority cases: `fd_flag_trips()` overlap detection, `fd_flag_events()` cascading overlap with real times and dummy-time skip, `fd_flag_eflalo()` end-to-end label propagation
-- [ ] **Multiple events per day (soft duplicates)**: when `.tsrc = "dummy"`, downstream code assumes one event per `.tid × gear × date × ir`. If multiple rows share that key with different catch values (or even identical values but different `lid`s), all share the same dummy `t1`/`t2` window, causing `fd_add_events()` to error. `fd_check_events_join()` will surface the conflict. Resolution path: detect in `fd_flag_events()` using a `.tid × gear × date × ir` duplicate check and resolve by taking the row with the highest `LE_KG_TOT` (or by aggregating catches) and warning the user. The current check 01 only catches `lid × date` duplicates (exact repeats of the stated event ID) — it does not catch this softer violation.
+- [ ] **Multiple events per day (soft duplicates)**: when `.tsrc = "dummy"`, downstream code assumes one event per `.tid × gear × date × ir`. If multiple rows share that key, `fd_add_events()` will error. **Partial resolution implemented**: `fd_add_events(resolve = TRUE)` now auto-resolves dummy-time conflicts at join time by keeping the highest `LE_KG_TOT` event per `.tid × date` group. **Remaining gap**: detection and resolution should happen earlier, in `fd_flag_events()`, using a `.tid × gear × date × ir` duplicate check, so that bad data is surfaced and cleaned before the processing stage rather than silently resolved at join time. The current check 01 only catches `lid × date` duplicates.
 - [ ] **Exact duplicate rows and `fd_events()`**: `fd_events()` errors on exact duplicate rows (all selected columns identical), so the `"01 duplicate event id and catch date"` check in `fd_flag_events` cannot trigger through `fd_flag_eflalo`. If upstream data may have exact duplicates, call `dplyr::distinct(eflalo)` before `fd_flag_eflalo()`, or use `fd_flag_events()` directly.
+
+
 
 ### Completed
 
@@ -517,3 +544,16 @@ No test files exist yet. The `tests/testthat/` directory is empty.
 - [x] `fd_flag_events()` fixed: temporal checks 04–08 now skipped when `.tsrc == "dummy"` (synthetic placeholder times carry no real temporal information; applying overlap detection to them incorrectly flagged all events sharing the same date). A `has_times` guard also handles the case where `t1`/`t2`/`.tsrc` are entirely absent.
 - [x] `fd_add_events()` implemented: joins pings to events by `.tid` + `between(time, t1, t2)`; row-count guard errors with an actionable message directing to `fd_check_events_join()` if a ping matches more than one event.
 - [x] `fd_check_events_join()` added: developer diagnostic that performs the unconstrained join and returns only the bloated rows (pings matched to multiple events), with a summary message. No assumptions about cause.
+- [x] `csq_area()` added to `R/geo.R`: computes c-square cell area (km²) using a spherical-Earth approximation. Resolution inferred automatically from code length or supplied explicitly via `resolution` parameter.
+- [x] `fd_add_events()` gained `resolve` parameter (`FALSE` by default): when `TRUE`, automatically resolves dummy-time conflicts by keeping the highest `LE_KG_TOT` event per `.tid × date` group before joining. `fd_check_events_join()` message updated to mention `resolve = TRUE`.
+- [x] Package-wide documentation review completed; all issues fixed:
+  - `fd_check_input()` `@param dictionary` — filled in from placeholder
+  - `fd_clean_eflalo()` `@param eflalo` — `dictionary` → `fd_dictionary`
+  - `fd_flag_tacsat()` `@param ports` — removed false default claim; now states it is required
+  - `fd_flag_tacsat()` `@return` — corrected: `.intv` is dropped (not kept) when `no_hands = TRUE`
+  - `fd_add_trips()` `@param cn` — corrected default from `"tid"` to `c("tid", ".tid")`
+  - `fd_add_state()` — replaced placeholder title and `xxx` params with proper documentation
+  - `harbours` data doc — corrected class (`sf` → tibble) and column count (5 → 4)
+  - `fd_dictionary` data doc — corrected first column name (`field` → `old`), added `new` column, corrected count (7 → 8)
+  - `data.R` `@source` (×3) — fixed typo `DATASET_vnstools.R` → `DATASET_vmstools.R`
+  - `DESCRIPTION` — added `icesVocab` to `Suggests`; removed `stringr` (unused in `R/` source)

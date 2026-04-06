@@ -12,7 +12,10 @@ fd_check_input(data, which = c("tacsat", "eflalo"), dictionary = fd_dictionary)
 \item{which}{Character. Which format to validate against: \code{"tacsat"} or
 \code{"eflalo"}.}
 
-\item{dictionary}{xxx}
+\item{dictionary}{A data frame (or tibble) with at least the columns \code{old},
+\code{table}, \code{required}, \code{derived}, and \code{type}. Defaults to the package
+dictionary \code{fd_dictionary}, which covers all standard TACSAT2 and EFLALO2
+fields. Override only if you are working with a custom field set.}
 }
 \value{
 \code{data}, invisibly.

@@ -328,6 +328,85 @@ csq2lonlat <- function(csq, degrees = 0.05) {
 }
 
 
+#' Compute the area of a c-square cell in km²
+#'
+#' Returns the geodetic area (km²) of a c-square cell using a spherical-Earth
+#' approximation. Cell area varies with latitude because lines of longitude
+#' converge toward the poles: a cell of resolution \eqn{r}° has a constant
+#' height of \eqn{r \times 111.1942} km but a width of
+#' \eqn{r \times 111.1942 \times \cos(\phi)} km, where \eqn{\phi} is the
+#' centre latitude. The constant 111.1942 km/° is derived from the mean
+#' circumference of the Earth (≈ 40,030 km / 360°), consistent with the
+#' nautical-mile definition (1° = 60 nm, 1 nm = 1852 m).
+#'
+#' Area formula:
+#' \deqn{A = r^2 \times \cos(\phi \cdot \pi / 180) \times 111.1942^2}
+#'
+#' The resolution \eqn{r} can be supplied explicitly or inferred automatically
+#' from the character length of the code:
+#'
+#' | `nchar(csq)` | Resolution |
+#' |---|---|
+#' | 4  | 10°   |
+#' | 6  | 5°    |
+#' | 8  | 1°    |
+#' | 10 | 0.5°  |
+#' | 12 | 0.1°  |
+#' | 14 | 0.05° |
+#' | 16 | 0.01° |
+#'
+#' @param csq Character vector of c-square codes (as produced by
+#'   [fd_calc_csq()]).
+#' @param resolution Resolution of the codes in decimal degrees. One of `10`,
+#'   `5`, `1`, `0.5`, `0.1`, `0.05`, `0.01`. If `NULL` (default), the
+#'   resolution is inferred automatically from the length of the first
+#'   non-`NA` code. All codes in `csq` must share the same resolution;
+#'   supply `resolution` explicitly if that cannot be guaranteed.
+#'
+#' @return Numeric vector of cell areas in km², the same length as `csq`.
+#'   Returns `NA` where `csq` is `NA`.
+#'
+#' @seealso [fd_calc_csq()] to generate c-square codes,
+#'   [csq2lonlat()] to retrieve cell-centre coordinates.
+#'
+#' @examples
+#' # Auto-detect resolution from code length
+#' csq_area("7500:104:100:1")        # 0.05° cell at ~50°N ≈ 19.9 km²
+#' csq_area("7500:104")              # 1° cell at ~50°N    ≈ 7865 km²
+#'
+#' # Supply resolution explicitly
+#' csq_area("7500:104:100:1", resolution = 0.05)
+#'
+#' # Vectorised — area decreases toward the poles
+#' codes <- fd_calc_csq(lon = rep(0, 4), lat = c(0, 30, 60, 80), degrees = 0.05)
+#' csq_area(codes)
+#'
+#' @export
+csq_area <- function(csq, resolution = NULL) {
+  nchar_map <- c(
+    "4"  = 10,
+    "6"  = 5,
+    "8"  = 1,
+    "10" = 0.5,
+    "12" = 0.1,
+    "14" = 0.05,
+    "16" = 0.01
+  )
+
+  if (is.null(resolution)) {
+    nc <- nchar(csq[!is.na(csq)][1])
+    resolution <- nchar_map[as.character(nc)]
+    if (is.na(resolution))
+      stop("Cannot infer resolution from c-square code length ", nc,
+           ". Provide `resolution` explicitly.")
+    resolution <- unname(resolution)
+  }
+
+  lat <- csq2lonlat(csq, resolution)$lat
+  resolution^2 * cos(lat * pi / 180) * 111.1942^2
+}
+
+
 #' Convert a data frame of positions to ICES statistical rectangle codes
 #'
 #' A corrected version of `ICESrectangle()` from the

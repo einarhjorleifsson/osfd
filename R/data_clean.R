@@ -22,7 +22,10 @@
 #' @param data A data frame in TACSAT or EFLALO format (raw, before cleaning).
 #' @param which Character. Which format to validate against: `"tacsat"` or
 #'   `"eflalo"`.
-#' @param dictionary xxx
+#' @param dictionary A data frame (or tibble) with at least the columns `old`,
+#'   `table`, `required`, `derived`, and `type`. Defaults to the package
+#'   dictionary `fd_dictionary`, which covers all standard TACSAT2 and EFLALO2
+#'   fields. Override only if you are working with a custom field set.
 #'
 #' @return `data`, invisibly.
 #'
@@ -198,7 +201,7 @@ fd_clean_tacsat <- function(tacsat, remove = TRUE) {
 #' `consecutive_id()` are not compatible with lazy/DuckDB backends.
 #'
 #' @param eflalo A data frame in EFLALO format. See `fd_check_input()` /
-#'   `dictionary` for the full list of required and optional fields.
+#'   `fd_dictionary` for the full list of required and optional fields.
 #' @param remove Logical. If `TRUE` (default), the raw date/time columns
 #'   `FT_DDAT`, `FT_DTIME`, `FT_LDAT`, and `FT_LTIME` are dropped once
 #'   `FT_DDATIM` / `FT_LDATIM` have been constructed. `LE_CDAT` is kept but

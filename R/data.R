@@ -83,7 +83,7 @@
 #' @source
 #' `vmstools` R package, EU Lot 2 project.
 #' Contact: Niels T. Hintzen \email{niels.hintzen@@wur.nl}.
-#' Modified for `osfd` via `data-raw/DATASET_vnstools.R`.
+#' Modified for `osfd` via `data-raw/DATASET_vmstools.R`.
 #'
 "eflalo"
 
@@ -126,7 +126,7 @@
 #' @source
 #' `vmstools` R package, EU Lot 2 project.
 #' Contact: Niels T. Hintzen \email{niels.hintzen@@wur.nl}.
-#' Modified for `osfd` via `data-raw/DATASET_vnstools.R`.
+#' Modified for `osfd` via `data-raw/DATASET_vmstools.R`.
 #'
 "tacsat"
 
@@ -138,7 +138,7 @@
 #' in filtering of VMS pings near port.
 #' Derived from the `harbours` dataset in the `vmstools` package.
 #'
-#' @format An `sf` data frame with 3,839 rows and 5 variables:
+#' @format A tibble with 3,839 rows and 4 variables:
 #' \describe{
 #'   \item{harbour}{Harbour name (character)}
 #'   \item{lon}{Longitude of harbour centroid, decimal degrees (numeric)}
@@ -147,7 +147,7 @@
 #' }
 #'
 #' @source
-#' `vmstools` R package. Processed for `osfd` via `data-raw/DATASET_vnstools.R`.
+#' `vmstools` R package. Processed for `osfd` via `data-raw/DATASET_vmstools.R`.
 #'
 "harbours"
 
@@ -162,12 +162,12 @@
 #' Useful for programmatically checking that user-supplied data frames contain
 #' the expected columns with the expected types, and for documentation.
 #'
-#' @format A tibble with 47 rows and 7 variables:
+#' @format A tibble with 47 rows and 8 variables:
 #' \describe{
-#'   \item{`field`}{Variable name in R (character). Species-specific columns
-#'     are represented as `LE_KG_<SP>` and `LE_EURO_<SP>`.}
-#'   \item{`table`}{Which table the field belongs to: `"tacsat"`, `"eflalo"`,
-#'     or `"both"` (character).}
+#'   \item{`old`}{Variable name in the raw ICES file (character). Species-specific
+#'     columns are represented as `LE_KG_<SP>` and `LE_EURO_<SP>`.}
+#'   \item{`table`}{Which table the field belongs to: `"tacsat"` or `"eflalo"`
+#'     (character).}
 #'   \item{`type`}{Expected R type after import / cleaning: `"chr"`, `"dbl"`,
 #'     `"int"`, `"dttm"`, `"date"`, or `"lgl"` (character).}
 #'   \item{`format`}{Raw format in the original file, e.g. `"DD/MM/YYYY"` or
@@ -178,6 +178,8 @@
 #'   \item{`derived`}{`TRUE` if the field is added or transformed by
 #'     `fd_clean_tacsat()` / `fd_clean_eflalo()`; `FALSE` if present in the
 #'     raw file (logical).}
+#'   \item{`new`}{Output column name after [fd_translate()] is applied
+#'     (character). Equals `old` for fields that are not renamed.}
 #' }
 #'
 #' @source

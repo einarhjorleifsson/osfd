@@ -20,7 +20,7 @@ A data frame with 97,015 rows and 8 variables:
 \source{
 \code{vmstools} R package, EU Lot 2 project.
 Contact: Niels T. Hintzen \email{niels.hintzen@wur.nl}.
-Modified for \code{osfd} via \code{data-raw/DATASET_vnstools.R}.
+Modified for \code{osfd} via \code{data-raw/DATASET_vmstools.R}.
 }
 \usage{
 tacsat

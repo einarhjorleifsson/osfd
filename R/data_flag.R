@@ -52,11 +52,13 @@
 #'   between consecutive pings for the same vessel, in **seconds**. Default: 30.
 #' @param areas A spatial object (sf) containing the area of interest. Records outside this area
 #'   fail the check.
-#' @param ports A spatial object (sf) containing port locations. If not
-#'   already an sf object, it should have `lon` and `lat` columns. Ports are
-#'   automatically buffered to 3 km radius and converted to Web Mercator
-#'   (EPSG:3857) for accurate distance calculations before being transformed
-#'   back to WGS84 (EPSG:4326). Default: `osfd::harbours`.
+#' @param ports A spatial object (`sf`) containing port locations. Required —
+#'   no default; the function stops with an error if missing. If not already an
+#'   `sf` object, `ports` must have `lon` and `lat` columns and will be
+#'   converted internally. Ports are automatically buffered to a 3 km radius
+#'   using Web Mercator (EPSG:3857) for accurate distance calculations before
+#'   being transformed back to WGS84 (EPSG:4326). `osfd::harbours` is a
+#'   suitable input for European fleets.
 #' @param no_hands Logical. Controls whether failing records are automatically
 #'   removed from the output. When `TRUE` (default, production mode), records
 #'   where `.checks != "ok"` are filtered out and the `.checks` column is
@@ -65,7 +67,7 @@
 #'
 #' @return
 #'   * `no_hands = TRUE` (default): The input data frame filtered to passing
-#'     records only, with `.intv` appended and `.checks` dropped.
+#'     records only. Both `.checks` and `.intv` are dropped before returning.
 #'   * `no_hands = FALSE`: The full input data frame (geometry dropped) with
 #'     two new columns appended:
 #'     \describe{
