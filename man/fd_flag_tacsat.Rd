@@ -7,8 +7,9 @@
 fd_flag_tacsat(
   tacsat,
   minimum_interval_seconds = 30,
-  area = osfd::ices_areas,
-  harbours = osfd::harbours
+  areas = ices_areas,
+  ports = harbours,
+  no_hands = TRUE
 )
 }
 \arguments{
@@ -19,23 +20,33 @@ contain \code{cid} (\code{VE_COU}), \code{vid} (\code{VE_REF}), \code{time} (\co
 \item{minimum_interval_seconds}{Numeric. Minimum permitted time interval
 between consecutive pings for the same vessel, in \strong{seconds}. Default: 30.}
 
-\item{area}{A spatial object (sf) containing the area of interest. If \code{NULL}
+\item{areas}{A spatial object (sf) containing the area of interest. If \code{NULL}
 (default), the function uses \code{osfd::ices_areas}. Records outside this area
 fail the check.}
 
-\item{harbours}{A spatial object (sf) containing harbour locations. If not
-already an sf object, it should have \code{lon} and \code{lat} columns. Harbours are
+\item{ports}{A spatial object (sf) containing port locations. If not
+already an sf object, it should have \code{lon} and \code{lat} columns. Ports are
 automatically buffered to 3 km radius and converted to Web Mercator
 (EPSG:3857) for accurate distance calculations before being transformed
 back to WGS84 (EPSG:4326). Default: \code{osfd::harbours}.}
+
+\item{no_hands}{Logical. Controls whether failing records are automatically
+removed from the output. When \code{TRUE} (default, production mode), records
+where \code{.checks != "ok"} are filtered out and the \code{.checks} column is
+dropped before returning. When \code{FALSE} (diagnostic mode), all records are
+returned with \code{.checks} and \code{.intv} appended so you can inspect failures.}
 }
 \value{
-The input data frame (with geometry dropped) with two new columns
-appended:
+\itemize{
+\item \code{no_hands = TRUE} (default): The input data frame filtered to passing
+records only, with \code{.intv} appended and \code{.checks} dropped.
+\item \code{no_hands = FALSE}: The full input data frame (geometry dropped) with
+two new columns appended:
 \describe{
 \item{\code{.checks}}{Character. First failing check label, or \code{"ok"}.}
-\item{\code{.intv}}{Numeric. Time interval in seconds since the previous ping
-for the same vessel.}
+\item{\code{.intv}}{Numeric. Time interval in seconds since the previous
+ping for the same vessel.}
+}
 }
 }
 \description{
@@ -51,11 +62,15 @@ by \code{vid} (\code{VE_REF}) and \code{time} (\code{SI_DATIM}), which \code{fd_
 The function converts to \code{sf} internally for spatial operations, then drops
 geometry before returning.
 
-\strong{This function never filters.} Filtering is deliberately left to the caller:
+By default (\code{no_hands = TRUE}) the function filters out failing records and
+drops \code{.checks} before returning — suitable for production pipelines where
+the cleaned result is all that is needed. Set \code{no_hands = FALSE} to retain
+all records with the \code{.checks} label, which is useful for interactive
+diagnostics:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{tacsat |>
-  fd\\_flag\\_tacsat() |>
-  dplyr::filter(.checks == "ok")
+  fd\\_flag\\_tacsat(no_hands = FALSE) |>
+  dplyr::count(.checks)
 }\if{html}{\out{</div>}}
 
 Checks are performed in the following order and return the first failure:
@@ -79,9 +94,15 @@ and \code{fd_step_time()} are not compatible with lazy/DuckDB backends.
 }
 \examples{
 \dontrun{
+# Production: get only clean pings
 osfd::tacsat |>
   fd_clean_tacsat() |>
-  fd_flag_tacsat() |>
+  fd_flag_tacsat()
+
+# Diagnostic: inspect all check labels
+osfd::tacsat |>
+  fd_clean_tacsat() |>
+  fd_flag_tacsat(no_hands = FALSE) |>
   dplyr::count(.checks)
 }
 

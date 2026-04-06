@@ -2,18 +2,67 @@
 % Please edit documentation in R/add_to_pings.R
 \name{fd_add_events}
 \alias{fd_add_events}
-\title{Title}
+\title{Add Fishing Event Information to Vessel Tracking Data}
 \usage{
 fd_add_events(ais, events)
 }
 \arguments{
-\item{ais}{xxx}
+\item{ais}{A data frame of vessel tracking positions after
+\code{\link{fd_add_trips}} has been applied. Must contain \code{.tid} and
+\code{time} (POSIXct).}
 
-\item{events}{xxx}
+\item{events}{A data frame of fishing events as returned by
+\code{\link{fd_events}} (and typically filtered by
+\code{\link{fd_flag_events}}). Must contain \code{.tid}, \code{t1} (POSIXct), and
+\code{t2} (POSIXct).}
 }
 \value{
-xxx
+\code{ais} with all columns from \code{events} appended. Pings outside any
+event window have \code{NA} for event columns.
 }
 \description{
-Title
+Joins vessel tracking positions (VMS/AIS) with fishing event information from
+the logbook based on the internal trip identifier (\code{.tid}) and a timestamp
+overlap (\code{time} between \code{t1} and \code{t2}). All event columns are carried across;
+pings that fall outside any event window receive \code{NA} for those columns.
+
+This function is intended to be called after \code{\link{fd_add_trips}}, which
+adds \code{.tid} to the \code{ais} data frame.
+}
+\details{
+The join is keyed on \code{.tid} (internal trip identifier) and
+\code{dplyr::between(time, t1, t2)}. The intended relationship is many-to-one:
+each ping should fall within at most one event window per trip. If any ping
+matches more than one event — because event windows overlap or share identical
+dummy times (\code{t1 = 00:01}, \code{t2 = 23:59}) — the row count of \code{ais} increases
+and the function stops with an informative error.
+
+Use \code{\link{fd_check_events_join}} to diagnose which pings and windows
+are responsible before re-running.
+
+Note that \code{t1} and \code{t2} in the events table are derived by
+\code{\link{fd_clean_eflalo}}: when real start/end times (\code{LE_STIME}/
+\code{LE_ETIME}) are absent, both are set to synthetic placeholder values
+(\code{00:01} and \code{23:59} on the catch date, \code{.tsrc = "dummy"}). These dummy
+windows span the full day and will match every ping recorded on that date for
+the trip — a valid approximation when events are unique per day, but a source
+of many-to-many conflicts when multiple events share the same date.
+}
+\examples{
+\dontrun{
+ais2 <- ais |>
+  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |>
+  fd_add_events(events)
+
+# If fd_add_events() errors, diagnose with:
+conflicts <- fd_check_events_join(ais2_pre, events)
+conflicts |> dplyr::count(.tid, t1, t2, sort = TRUE)
+}
+
+}
+\seealso{
+\code{\link{fd_add_trips}} for the preceding join step,
+\code{\link{fd_check_events_join}} for diagnosing join conflicts,
+\code{\link{fd_events}} and \code{\link{fd_flag_events}} for preparing the
+events input.
 }

@@ -1,6 +1,7 @@
 # osfd 0.0.0.9000
 
-Development version. Functions and interfaces are subject to change.
+Pre-release development version. Functions and interfaces are subject to change
+without notice.
 
 ---
 
@@ -9,8 +10,8 @@ Development version. Functions and interfaces are subject to change.
 - Added `dictionary`: a data dictionary covering all TACSAT2 and EFLALO2
   fields, used to drive validation and column name translation throughout the
   package.
-- Icelandic fleet VMS and logbook data stored as parquet files in `data-raw/`
-  (`tacsat_IS.parquet`, `eflalo_IS.parquet`) for use in development and testing.
+- Icelandic fleet VMS and logbook parquet files in `data-raw/`
+  (`tacsat_IS.parquet`, `eflalo_IS.parquet`) serve as development and test data.
 
 ---
 
@@ -18,10 +19,11 @@ Development version. Functions and interfaces are subject to change.
 
 ### Validation
 
-**`fd_check_input(data, which)`** — preflight validator for raw TACSAT or EFLALO
-data frames. Checks required fields (hard stop), optional fields (message), and
-coercion safety (warns if numeric/date conversion would silently introduce NAs).
-Pipeable; called internally by both clean functions.
+**`fd_check_input(data, which)`** — preflight validator for raw TACSAT or
+EFLALO data frames. Checks required fields (hard stop), optional fields
+(message), and coercion safety (warns if numeric or date conversion would
+silently introduce `NA`s). Pipeable; called internally by both clean functions
+and exported for standalone use.
 
 ### Clean
 
@@ -31,9 +33,10 @@ Pipeable; called internally by both clean functions.
 - Combines `SI_DATE` + `SI_TIME` into a single `SI_DATIM` POSIXct column (UTC);
   source columns dropped by default (`remove = TRUE`).
 - Adds `.pid` (integer row identifier); sorts by vessel × datetime.
-- Translates column names to short lowercase convention:
+- Translates column names to short lowercase convention via `fd_translate()`:
   `VE_COU → cid`, `VE_REF → vid`, `SI_LATI → lat`, `SI_LONG → lon`,
-  `SI_SP → speed`, `SI_HE → heading`, `SI_DATIM → time`.
+  `SI_SP → speed`, `SI_HE → heading`, `SI_DATIM → time`. Dot-prefix columns
+  (`.pid`) are not renamed.
 
 **`fd_clean_eflalo(eflalo, remove = TRUE)`**
 
@@ -51,90 +54,126 @@ Pipeable; called internally by both clean functions.
   `VE_REF → vid`, `VE_COU → cid`, `VE_LEN → length`, `VE_KW → kw`,
   `VE_TON → gt`, `FT_REF → tid`, `FT_DDATIM → T1`, `FT_LDATIM → T2`,
   `LE_CDAT → date`, `LE_GEAR → gear`, `LE_MSZ → mesh`, `LE_RECT → ir`,
-  `LE_DIV → fao`, `LE_MET → met6`, and others.
+  `LE_DIV → fao`, `LE_MET → met6`, and others. `.eid` and `.tid` are not
+  renamed (dot-prefix convention signals package-derived columns).
 
 ### Revert
 
 **`fd_revert_tacsat(tacsat)`** — reverses the name translation from
 `fd_clean_tacsat()`, restoring ICES ALLCAPS column names. Reconstructs
-`SI_DATE` (`"DD/MM/YYYY"`) and `SI_TIME` (`"HH:MM"`) from `SI_DATIM` via
+`SI_DATE` (`"DD/MM/YYYY"`) and `SI_TIME` (`"HH:MM"`) from `time` via
 `format()`. Only present columns are renamed; extras pass through unchanged.
 
 **`fd_revert_eflalo(eflalo)`** — reverses the name translation from
-`fd_clean_eflalo()`. Reconstructs `FT_DDAT` / `FT_DTIME` from `FT_DDATIM` and
-`FT_LDAT` / `FT_LTIME` from `FT_LDATIM` via `format()`. `.tid` is not
-renamed (excluded to avoid clash with `FT_REF → tid`).
+`fd_clean_eflalo()`. Reconstructs `FT_DDAT` / `FT_DTIME` from `T1` and
+`FT_LDAT` / `FT_LTIME` from `T2` via `format()`. `.tid` passes through
+unchanged.
 
 ---
 
 ## QC / Flagging (`R/data_flag.R`)
 
-All flag functions follow a no-filter convention: they add a labelled check
-column and leave filtering to the caller.
+All flag functions share a `no_hands` parameter:
 
-**`fd_flag_tacsat(tacsat, minimum_interval_seconds, area, harbours)`**
+- `no_hands = TRUE` (default, production): failing records are filtered out and
+  the check column is dropped before returning.
+- `no_hands = FALSE` (diagnostic): all records are returned with the check
+  column appended. Intended for interactive inspection — filter and drop
+  manually once satisfied.
+
+**`fd_flag_tacsat(tacsat, minimum_interval_seconds = 30, areas, ports, no_hands = TRUE)`**
 
 - Computes `.intv` (ping interval in seconds) via `fd_step_time()`, grouped by
   vessel (`vid`).
-- Adds `.checks` column with labels 01–08 or `"ok"`:
-  duplicate pings, impossible coordinates, pings outside area, pings in harbour,
-  sub-minimum intervals, etc.
+- Records with missing coordinates (`lon`/`lat` is `NA`) are labelled
+  `"00 missing coordinates"` before any spatial operations.
+- Adds `.checks` with labels 00–08 or `"ok"`: missing coordinates, pings
+  outside ICES area, duplicate timestamps, sub-minimum interval, pings in
+  harbour, missing country / vessel id / datetime / speed.
 
-**`fd_flag_trips(trips)`** — flags trip-level problems in the output of
-`fd_trips()`: missing/invalid timestamps, `T1 > T2`, `T1 == T2`, temporal
-overlaps, missing vessel metadata. Adds `.tchecks` (labels 01–08 or `"ok"`).
+**`fd_flag_trips(trips, no_hands = TRUE)`** — flags trip-level problems in the
+output of `fd_trips()`. Adds `.tchecks` (labels 01–09 or `"ok"`):
 
-**`fd_flag_events(events, gear = NULL, met6 = NULL)`** — flags event-level
-problems in the output of `fd_events()`. Adds `.echecks` (labels 01–09 or
-`"ok"`):
+| Label | Condition |
+|---|---|
+| 01 | departure missing (`T1` is `NA`) |
+| 02 | arrival missing (`T2` is `NA`) |
+| 03 | new years trip (trip crosses year boundary) |
+| 04 | departure after arrival (`T1 > T2`) |
+| 05 | departure equals arrival (`T1 == T2`) |
+| 06 | next departure before current arrival |
+| 07 | previous arrival after current departure |
+| 08 | no vessel length |
+| 09 | no engine power |
 
-- 01: duplicate event id and catch date
-- 02–03: invalid gear / metier codes (skipped if `gear`/`met6 = NULL`)
-- 04–08: `t1`/`t2` temporal checks — missing, inverted, overlap (applied only
-  when `t1`/`t2` columns are present, i.e. `LE_STIME`/`LE_ETIME` were in the
-  raw data)
+**`fd_flag_events(events, no_hands = TRUE, gear = NULL, met6 = NULL)`** — flags
+event-level problems in the output of `fd_events()`. Adds `.echecks` (labels
+01–08 or `"ok"`):
+
+- 01: duplicate `lid` + catch date
+- 02–03: invalid gear / metier codes (skipped when `gear`/`met6 = NULL`,
+  avoiding network requests on every call)
+- 04–08: `t1`/`t2` temporal checks (missing, inverted, overlap) — applied only
+  when `t1`/`t2` are present **and** `.tsrc != "dummy"`; dummy times are
+  synthetic placeholders and carry no real temporal information
 
 Overlap detection (check 08) uses a cumulative-max-of-`t2` algorithm rather
-than lead/lag-of-1, so all cascading overlaps within a trip are resolved in a
-single `fd_flag_events()` call. Events are sorted by `t1` within each trip
-before checks are applied.
+than lead/lag-of-1, resolving all cascading overlaps in a single pass. Events
+are sorted by `t1` within each trip before checks are applied.
 
-**`fd_flag_eflalo(eflalo, year = NULL, gear = NULL, met6 = NULL)`** — combines
-trip and event checks on a full eflalo data frame. Delegates trip overlap
-detection to `fd_trips()` + `fd_flag_trips()` internally. Adds `.checks`
-(labels 01–12 or `"ok"`).
+**`fd_flag_eflalo(eflalo, no_hands = TRUE, gear = NULL, met6 = NULL)`** — an
+orchestrating wrapper; does not re-implement check logic. Delegates to
+`fd_flag_trips()` (joined via `.tid`) and `fd_flag_events()` (joined via
+`.eid`), then applies two cross-level checks requiring the full joined frame:
+`"catch date before departure"` and `"catch date after arrival"`. Composes a
+single `.checks` column in priority order: trip failure → event failure →
+cross-level failure → `"ok"`.
 
 ---
 
 ## Decomposition (`R/tidy_eflalo.R`)
 
 **`fd_trips(eflalo)`** — extracts one row per trip from a cleaned eflalo data
-frame (uses `.tid` added by `fd_clean_eflalo()`).
+frame (uses `.tid` added by `fd_clean_eflalo()`). Returns vessel metadata and
+trip timestamps.
 
 **`fd_events(eflalo)`** — extracts event-level rows (catch date, gear,
-rectangle, catch columns). Errors informatively if duplicate events are
-detected.
+rectangle, catch columns, optional `t1`/`t2`/`.tsrc`). Errors informatively if
+exact duplicate rows are detected after selection.
 
 **`fd_tidy_eflalo(eflalo)`** — convenience wrapper returning
-`list(trips = ..., events = ...)`.
+`list(trips = fd_trips(eflalo), events = fd_events(eflalo))`.
 
 ---
 
-## Trip Assignment (`R/analysis.R`)
+## Ping Enrichment (`R/add_to_pings.R`)
 
-**`fd_add_trips(tacsat, eflalo, cn, remove)`** — joins trip-level metadata from
-eflalo onto tacsat pings by vessel identity and time overlap. Each ping is
-matched to the trip active at that timestamp; pings outside any trip window
-receive `NA`. Currently expects ICES ALLCAPS column names (pre-translation or
-post-revert).
+**`fd_add_trips(ais, trips, cn = "tid", remove = TRUE)`** — joins trip-level
+metadata from `trips` (output of `fd_trips()`) onto VMS/AIS pings by vessel
+identity and time overlap. `"tid"` and `".tid"` are always carried across;
+additional columns controlled via `cn`. A row-count guard stops with an
+informative error if overlapping trips cause any ping to match more than one
+trip, directing the user to `fd_flag_trips()`.
+
+**`fd_add_events(ais, events)`** — joins fishing events (output of
+`fd_events()`) onto pings enriched by `fd_add_trips()`, matching on `.tid` and
+`between(time, t1, t2)`. All event columns are carried across; pings outside
+any event window receive `NA`. A row-count guard errors if any ping matches
+more than one event, directing the user to `fd_check_events_join()`.
+
+**`fd_check_events_join(ais, events)`** — developer diagnostic for
+`fd_add_events()` join conflicts. Performs the unconstrained join and returns
+only the rows where a ping matched more than one event. Prints a summary of
+affected pings and trips. Returns an empty tibble (invisibly) when no conflicts
+exist.
 
 ---
 
 ## Utilities
 
 **`fd_translate(d, dictionary, from, to)`** (`R/utils.R`) — renames columns of
-a data frame or lazy tibble using a lookup dictionary. Used internally by all
-clean and revert functions; also exported for direct use.
+a data frame using a lookup dictionary. Used internally by all clean and revert
+functions; also exported for direct use.
 
 **`d2ir(lon, lat, sub)`** (`R/geo.R`) — converts decimal degree coordinates to
 ICES statistical rectangles. dbplyr-compatible.
@@ -147,7 +186,7 @@ vmstools `CSquare()` equivalent (no intermediate 3D array). dbplyr-compatible.
 
 **`csq2lonlat(csq, degrees)`** (`R/geo.R`) — decodes a c-square code to the
 centre coordinates (`lat`, `lon`) of the cell at the requested resolution.
-Returns exact cell centres; R-only (returns a `data.frame`).
+Returns exact cell centres (no Excel-era rounding offset). R-only.
 
 **`fd_step_time(datetime, weight, fill_na)`** (`R/trail_steps.R`) — computes
 ping-to-ping time intervals as a weighted blend of backward and forward

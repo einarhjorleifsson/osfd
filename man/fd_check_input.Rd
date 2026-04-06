@@ -4,13 +4,15 @@
 \alias{fd_check_input}
 \title{Validate a TACSAT or EFLALO data frame against the field definitions}
 \usage{
-fd_check_input(data, which = c("tacsat", "eflalo"))
+fd_check_input(data, which = c("tacsat", "eflalo"), dictionary = dictionary)
 }
 \arguments{
 \item{data}{A data frame in TACSAT or EFLALO format (raw, before cleaning).}
 
 \item{which}{Character. Which format to validate against: \code{"tacsat"} or
 \code{"eflalo"}.}
+
+\item{dictionary}{xxx}
 }
 \value{
 \code{data}, invisibly.

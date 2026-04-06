@@ -4,13 +4,19 @@
 \alias{fd_flag_events}
 \title{Check Fishing Events for Data Quality Issues}
 \usage{
-fd_flag_events(events, gear = NULL, met6 = NULL)
+fd_flag_events(events, no_hands = TRUE, gear = NULL, met6 = NULL)
 }
 \arguments{
 \item{events}{A data frame of fishing events as returned by
 \code{\link{fd_events}}. Must contain \code{lid} (\code{LE_ID}), \code{date} (\code{LE_CDAT}),
 \code{gear} (\code{LE_GEAR}), and \code{met6} (\code{LE_MET}). If \code{t1} and \code{t2} are present,
-temporal checks 04–09 are also applied.}
+temporal checks 04–08 are also applied.}
+
+\item{no_hands}{Logical. Controls whether failing events are automatically
+removed from the output. When \code{TRUE} (default, production mode), events
+where \code{.echecks != "ok"} are filtered out and the \code{.echecks} column is
+dropped before returning. When \code{FALSE} (diagnostic mode), all events are
+returned with \code{.echecks} appended so you can inspect failures.}
 
 \item{gear}{Character vector of valid ICES gear codes (metier level 4).
 Obtain via \code{icesVocab::getCodeList("GearType")$Key}. If \code{NULL} (default),
@@ -21,18 +27,26 @@ Obtain via \code{icesVocab::getCodeList("Metier6_FishingActivity")$Key}. If
 \code{NULL} (default), the metier check is skipped.}
 }
 \value{
-The input data frame with an \code{.echecks} character column appended.
+\itemize{
+\item \code{no_hands = TRUE} (default): The input data frame filtered to passing
+events only, with \code{.echecks} dropped.
+\item \code{no_hands = FALSE}: The full input data frame with an \code{.echecks}
+character column appended (first failing check label, or \code{"ok"}).
+}
 }
 \description{
 Adds an \code{.echecks} column to an events data frame (as returned by
 \code{\link{fd_events}}) with the first failing quality check for each row,
 or \code{"ok"} if all checks pass.
 
-\strong{This function never filters.} Filtering is deliberately left to the caller:
+By default (\code{no_hands = TRUE}) the function filters out failing events and
+drops \code{.echecks} before returning — suitable for production pipelines. Set
+\code{no_hands = FALSE} to retain all events with the \code{.echecks} label for
+interactive diagnostics:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{events |>
-  fd\\_flag\\_events() |>
-  dplyr::filter(.echecks == "ok")
+  fd\\_flag\\_events(no_hands = FALSE) |>
+  dplyr::count(.echecks)
 }\if{html}{\out{</div>}}
 
 Checks are performed in the following order and return the first failure:
@@ -50,10 +64,13 @@ overlaps in a single pass, not just adjacent ones}
 \item{\code{"ok"}}{All checks passed}
 }
 
-Checks 04–08 apply only when \code{t1} and \code{t2} columns are present (derived by
-\code{fd_clean_eflalo()} from \code{LE_STIME}/\code{LE_ETIME}). Events are sorted by \code{t1}
-within each trip before the overlap check is applied. Check 08 may produce
-false positives for static gears where simultaneous deployments are valid.
+Checks 04–08 apply only when \code{t1}, \code{t2}, and \code{.tsrc} columns are present
+\strong{and} \code{.tsrc != "dummy"}. Dummy times (\code{t1 = 00:01}, \code{t2 = 23:59}) are
+synthetic placeholders created when \code{LE_STIME}/\code{LE_ETIME} are absent — they
+carry no real temporal information, so overlap detection against them would
+produce meaningless failures. Events are sorted by \code{t1} within each trip
+before the overlap check is applied. Check 08 may produce false positives for
+static gears where simultaneous deployments are valid.
 
 \strong{Note:} Catch-date range checks (\code{date} (\code{LE_CDAT}) vs. trip departure/arrival)
 are not performed here because events are separated from trips at this stage.
@@ -62,9 +79,13 @@ the full joined EFLALO data frame.
 }
 \examples{
 \dontrun{
-events <- fd_events(eflalo)
-events_checked <- fd_flag_events(events)
-events_checked |> dplyr::count(.echecks)
+# Production: get only valid events
+events <- fd_events(eflalo) |> fd_flag_events()
+
+# Diagnostic: inspect all check labels
+fd_events(eflalo) |>
+  fd_flag_events(no_hands = FALSE) |>
+  dplyr::count(.echecks)
 }
 
 }

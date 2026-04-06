@@ -22,6 +22,7 @@
 #' @param data A data frame in TACSAT or EFLALO format (raw, before cleaning).
 #' @param which Character. Which format to validate against: `"tacsat"` or
 #'   `"eflalo"`.
+#' @param dictionary xxx
 #'
 #' @return `data`, invisibly.
 #'
@@ -40,11 +41,11 @@
 #' }
 #'
 #' @export
-fd_check_input <- function(data, which = c("tacsat", "eflalo")) {
+fd_check_input <- function(data, which = c("tacsat", "eflalo"), dictionary = dictionary) {
   which <- match.arg(which)
 
   # Non-derived, non-pattern rows for this table
-  defs <- dictionary |>
+  defs <- osfd::dictionary |>
     dplyr::filter(table == which, !derived, !grepl("<", old))
 
   # 1. Required fields -> hard stop

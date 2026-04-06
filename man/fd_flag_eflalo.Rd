@@ -2,80 +2,102 @@
 % Please edit documentation in R/data_flag.R
 \name{fd_flag_eflalo}
 \alias{fd_flag_eflalo}
-\title{Single-pass EFLALO quality checks}
+\title{EFLALO quality checks}
 \usage{
-fd_flag_eflalo(eflalo, year = NULL, gear = NULL, met6 = NULL)
+fd_flag_eflalo(eflalo, no_hands = TRUE, gear = NULL, met6 = NULL)
 }
 \arguments{
 \item{eflalo}{A data frame in EFLALO format as returned by \code{fd_clean_eflalo()}.
-Must contain \code{cid} (\code{VE_COU}), \code{vid} (\code{VE_REF}), \code{length} (\code{VE_LEN}),
-\code{kw} (\code{VE_KW}), \code{gt} (\code{VE_TON}), \code{tid} (\code{FT_REF}), \code{T1} (\code{FT_DDATIM},
-POSIXct), \code{T2} (\code{FT_LDATIM}, POSIXct), \code{lid} (\code{LE_ID}), \code{date} (\code{LE_CDAT},
+Must contain \code{.tid}, \code{.eid}, \code{cid} (\code{VE_COU}), \code{vid} (\code{VE_REF}), \code{length}
+(\code{VE_LEN}), \code{kw} (\code{VE_KW}), \code{gt} (\code{VE_TON}), \code{tid} (\code{FT_REF}), \code{T1}
+(\code{FT_DDATIM}, POSIXct), \code{T2} (\code{FT_LDATIM}, POSIXct), \code{date} (\code{LE_CDAT},
 Date), \code{gear} (\code{LE_GEAR}), and \code{met6} (\code{LE_MET}).}
 
-\item{year}{Integer. Submission year. When supplied, records with \code{T1}
-(\code{FT_DDATIM}) before 1 January of this year are flagged. If \code{NULL} (default),
-the check is skipped.}
+\item{no_hands}{Logical. Controls whether failing records are automatically
+removed from the output. When \code{TRUE} (default, production mode), records
+where \code{.checks != "ok"} are filtered out and \code{.checks} is dropped. When
+\code{FALSE} (diagnostic mode), all records are returned with \code{.checks} appended.}
 
 \item{gear}{Character vector of valid ICES gear codes (metier level 4).
+Passed to \code{\link{fd_flag_events}}.
 Obtain via \code{icesVocab::getCodeList("GearType")$Key}. If \code{NULL} (default),
 the gear check is skipped.}
 
 \item{met6}{Character vector of valid ICES metier level 6 codes.
+Passed to \code{\link{fd_flag_events}}.
 Obtain via \code{icesVocab::getCodeList("Metier6_FishingActivity")$Key}. If
 \code{NULL} (default), the metier check is skipped.}
 }
 \value{
-The input data frame with a \code{.checks} character column appended.
+\itemize{
+\item \code{no_hands = TRUE} (default): The input data frame filtered to passing
+records only, with \code{.checks} dropped.
+\item \code{no_hands = FALSE}: The full input data frame with a \code{.checks} character
+column appended (first failing check label, or \code{"ok"}).
+}
 }
 \description{
-Adds a \code{.checks} column to an EFLALO data frame in a single \code{case_when()} pass.
-Each record is labelled with the first failing check, or \code{"ok"} if it passes
-all of them.
+An orchestrating wrapper that applies \code{\link{fd_flag_trips}} and
+\code{\link{fd_flag_events}} to a full EFLALO data frame, then composes their
+results into a single \code{.checks} column. Trip-level failures take priority over
+event-level failures; two cross-level checks (catch date vs. trip window) are
+added that cannot be performed in either sub-function alone.
 
-\strong{This function never filters.} Filtering is deliberately left to the caller:
+Assumes \code{T1} (\code{FT_DDATIM}), \code{T2} (\code{FT_LDATIM}, POSIXct), and \code{date}
+(\code{LE_CDAT}, Date) are already present — run \code{fd_clean_eflalo()} first.
+
+By default (\code{no_hands = TRUE}) failing records are filtered out and \code{.checks}
+is dropped. Set \code{no_hands = FALSE} to retain all records with \code{.checks} for
+diagnostics:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{osfd::eflalo |>
   fd\\_clean\\_eflalo() |>
-  fd\\_flag\\_eflalo() |>
-  dplyr::filter(.checks == "ok")
+  fd\\_flag\\_eflalo(no_hands = FALSE) |>
+  dplyr::count(.checks)
 }\if{html}{\out{</div>}}
 
-The function assumes \code{T1} (\code{FT_DDATIM}), \code{T2} (\code{FT_LDATIM}, POSIXct), and
-\code{date} (\code{LE_CDAT}, Date) are already present — run \code{fd_clean_eflalo()} first
-and it handles all of that so you don't have to.
-
-Trip overlap detection is delegated to \code{\link{fd_flag_trips}} (via
-\code{\link{fd_trips}}), then joined back to flag individual events whose
-trip is overlapping.
-
-Checks are performed in the following order and return the first failure:
+\strong{Trip-level checks} (see \code{\link{fd_flag_trips}} for full details):
 \describe{
-\item{\code{"01 duplicated events"}}{Duplicate row with the same \code{vid} (\code{VE_REF}), \code{lid} (\code{LE_ID}), and \code{date} (\code{LE_CDAT})}
-\item{\code{"02 impossible time"}}{\code{T1} (\code{FT_DDATIM}) or \code{T2} (\code{FT_LDATIM}) is \code{NA}}
-\item{\code{"03 new years trip"}}{Departure year is exactly one less than landing year (trip crosses year boundary)}
-\item{\code{"04 departure after arrival"}}{\code{T1 > T2} — time travel not supported}
-\item{\code{"05 departure equals arrival"}}{\code{T1 == T2} — a trip of zero duration}
-\item{\code{"06 overlapping trips"}}{\code{T1} falls before \code{T2} of the previous trip for the same vessel}
-\item{\code{"07 gear (metier 4) invalid"}}{\code{gear} (\code{LE_GEAR}) not in \code{gear} vector (skipped if \code{gear = NULL})}
-\item{\code{"08 metier 6 invalid"}}{\code{met6} (\code{LE_MET}) not in \code{met6} vector (skipped if \code{met6 = NULL})}
-\item{\code{"09 catch date before departure"}}{\code{date} (\code{LE_CDAT}) precedes \code{T1} (\code{FT_DDATIM}) (informational)}
-\item{\code{"10 catch date after arrival"}}{\code{date} (\code{LE_CDAT}) is later than \code{T2} (\code{FT_LDATIM}) (informational)}
-\item{\code{"11 no vessel length"}}{\code{length} (\code{VE_LEN}) is \code{NA} (informational)}
-\item{\code{"12 no engine power"}}{\code{kw} (\code{VE_KW}) is \code{NA} (informational)}
-\item{\code{"ok"}}{All checks passed}
+\item{\code{"01 departure missing"} … \code{"09 no engine power"}}{Propagated verbatim
+from \code{\link{fd_flag_trips}}; all events belonging to a failing trip
+inherit the trip's label.}
 }
 
-Checks 09–12 are informational: they flag records that may warrant review
-but are not necessarily errors. Use \code{dplyr::filter(.checks == "ok")} to
-exclude all flagged records, or inspect specific check labels as needed.
+\strong{Event-level checks} (see \code{\link{fd_flag_events}} for full details):
+\describe{
+\item{\code{"01 duplicate event id and catch date"} … \code{"08 overlaps with a previous event"}}{
+Propagated verbatim from \code{\link{fd_flag_events}}; applied only to
+events whose trip passed all trip-level checks.}
+}
+
+\strong{Cross-level checks} (require both trip and event info; only applied when
+both trip and event pass):
+\describe{
+\item{\code{"catch date before departure"}}{\code{date} (\code{LE_CDAT}) precedes \code{T1} (\code{FT_DDATIM})}
+\item{\code{"catch date after arrival"}}{\code{date} (\code{LE_CDAT}) is later than \code{T2} (\code{FT_LDATIM})}
+}
+
+\strong{Note on duplicates:} \code{\link{fd_events}} errors if the events data frame
+contains exact duplicate rows. If your data may have duplicates, run
+\code{dplyr::distinct()} on \code{eflalo} before calling this function, or use
+\code{\link{fd_flag_events}} directly on the output of \code{\link{fd_events}}.
 }
 \examples{
 \dontrun{
+# Production: get only clean records
 osfd::eflalo |>
   fd_clean_eflalo() |>
-  fd_flag_eflalo() |>
+  fd_flag_eflalo()
+
+# Diagnostic: inspect all check labels
+osfd::eflalo |>
+  fd_clean_eflalo() |>
+  fd_flag_eflalo(no_hands = FALSE) |>
   dplyr::count(.checks)
 }
 
+}
+\seealso{
+\code{\link{fd_flag_trips}}, \code{\link{fd_flag_events}},
+\code{\link{fd_trips}}, \code{\link{fd_events}}
 }

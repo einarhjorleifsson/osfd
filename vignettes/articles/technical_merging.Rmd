@@ -1,0 +1,402 @@
+---
+title: "Merging EFLALO and TACSAT: Technical Documentation"
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+
+**Needs updating**
+
+### Overview
+
+The merge process links VMS ping records (TACSAT) to logbook records (EFLALO) in two
+phases: (1) assigning a trip identifier to each ping via
+`vmstools::mergeEflalo2Tacsat()`, then (2) enriching matched pings with the logbook
+attributes recorded for that trip, first by a coarse trip-level match and then by
+`trip_assign()` for trips with within-trip variation. A proposed dplyr-based alternative
+that resolves the key limitation is described at the end.
+
+---
+
+### Phase 1 — Trip Identifier Assignment
+
+**`mergeEflalo2Tacsat(eflalo, tacsat)`** is the entry point for this phase. It returns
+the full TACSAT data frame with one new column, `FT_REF`, whose value is the matched
+logbook trip identifier or `0` where no match was found.
+
+**Step 1 — Datetime construction.**
+If not already present, POSIXct timestamps are constructed from raw character
+fields.[^1] For EFLALO: `FT_DDAT` + `FT_DTIME` → `D_DATIM` (departure) and
+`FT_LDAT` + `FT_LTIME` → `L_DATIM` (return). For TACSAT: `SI_DATE` + `SI_TIME`
+→ `SI_DATIM`. All are parsed under `"%d/%m/%Y %H:%M"` in the GMT timezone.
+
+**Step 2 — Type coercion and sorting.**
+`VE_REF` is coerced to character in both datasets. Both are then sorted
+chronologically within vessel: EFLALO by `VE_REF`, `D_DATIM`, `L_DATIM`; TACSAT by
+`VE_REF`, `SI_DATIM`.
+
+**Step 3 — Split by vessel.**
+Both datasets are split into named lists keyed by `VE_REF`. `pmatch` maps each
+unique TACSAT vessel to its EFLALO counterpart, producing an index vector
+(`tacefmatch`) of length equal to the number of distinct TACSAT vessels.
+
+**Step 4 — Interval join (per vessel).**
+For each vessel the function:
+
+1. Extracts unique trip windows from EFLALO — one row per distinct `FT_REF`,
+   retaining `D_DATIM`, `L_DATIM`, and `FT_REF`.
+2. Computes two outer difference matrices: `smdtime` (ping time − departure;
+   non-negative means ping is on or after departure) and `gtltime` (return − ping
+   time; non-negative means ping is before or at return).[^2]
+3. Identifies, for each trip, the first ping index satisfying the departure
+   condition (`st`) and the last satisfying the return condition (`en`).
+4. Retains only pairs where `st ≤ en`. `FT_REF` is initialised to `0` for all pings;
+   where a valid `[st, en]` interval exists, `mapply(seq, st, en)` assigns the
+   trip's `FT_REF`. Vessels absent from EFLALO receive `FT_REF = 0` throughout.
+
+After the loop the split TACSAT list is reassembled into a single data frame with
+the new `FT_REF` column.
+
+---
+
+### Phase 2 — Attribute Enrichment
+
+**Step 5 — Quality check and filtering.**
+Records with `FT_REF == 0` are separated into `tacsatpmin` and saved to disk. The
+proportion is reported; a high value signals mismatched date/time formats between
+datasets. Only pings with `FT_REF != 0` are carried forward into `tacsatp`.
+
+**Step 6 — Trip-level attribute assignment (coarse).**
+A vectorised `match(tacsatp$FT_REF, eflalo$FT_REF)` copies the following EFLALO
+columns to each ping in `tacsatp`: `LE_GEAR`, `LE_MSZ`, `VE_LEN`, `VE_KW`,
+`LE_RECT`, `LE_MET`, `LE_WIDTH`, `VE_FLT`, `VE_COU`. Because `match` returns the
+first matching row, this produces correct results only when the column value is
+constant across all logbook events of the trip.[^3]
+
+**Step 7 — Within-trip, event-level attribute refinement.**
+`trip_assign(tacsatp, eflalo, col, haul_logbook)` is called once per column for
+`LE_GEAR`, `LE_MSZ`, `LE_RECT`, `LE_MET`, and (if present in EFLALO) `LE_WIDTH`.
+It scopes its work to trips that contain **more than one distinct value** of the
+target column; all other trips are already fully resolved by Step 6 and are left
+untouched.[^4]
+
+For the selected trips the existing column value is cleared from the TACSAT subset,
+then assignment proceeds through up to three ordered passes:
+
+- **Pass 1 — Log-event date matching.** EFLALO events are aggregated by
+  `(FT_REF, LE_CDAT)`. Only day-trip combinations where the column value is
+  unambiguous (a single unique value on that date within that trip) contribute. A
+  left join then matches each ping where `SI_DATE == LE_CDAT`. Pings whose date is
+  ambiguous or has no logbook event receive `NA`.
+
+- **Pass 2 — Nearest-haul datetime matching (optional).** Runs only when
+  `haul_logbook = TRUE` and `LE_SDATTIM` is present in EFLALO. A rolling
+  nearest-time join (`data.table roll = "nearest"`) against haul start and end
+  times assigns the column value from the temporally closest haul event within the
+  trip.[^5]
+
+- **Pass 3 — Catch-weighted fallback.** For any pings still carrying `NA`, the
+  column value associated with the highest summed `LE_KG_TOT` within the trip is
+  assigned to all remaining unresolved pings. If `LE_KG_TOT` is absent it is
+  computed as the row-wise sum of all `LE_KG_*` columns. This aggregation and
+  selection is done **independently for each column** in separate `trip_assign`
+  calls.
+
+Each `trip_assign` call returns only the affected trips. The caller splices them
+back into `tacsatp` by dropping those trips and row-binding the revised sub-frame
+(`rbindlist(..., fill = TRUE)`). This splice-and-replace is repeated for each
+column in sequence.
+
+---
+
+### Assumption About the LE_ Variable Combinations Matrix
+
+The code treats `LE_GEAR`, `LE_MSZ`, `LE_RECT`, `LE_MET`, and `LE_WIDTH` as
+**independently assignable**. Each `trip_assign` call handles exactly one column
+at a time with no reference to what was assigned in any prior call. The implicit
+assumption is:
+
+> **The joint combination `(gear, mesh, rect, metier, width)` for a ping can be
+> correctly reconstructed column by column. The optimal value for each column is
+> independent of the optimal value for any other column.**
+
+This holds only when each calendar day within a trip has exactly one logbook event,
+making all columns simultaneously unambiguous and drawn from the same source row.
+
+---
+
+### Cases the Process Handles Correctly
+
+| Case | Why it works |
+|---|---|
+| One logbook event per day per trip | Pass 1 assigns all columns from the same source row simultaneously; all joint combinations are preserved |
+| Multiple events per day, all columns vary, catch weight consistent | Pass 3 picks the same dominant event for every column, yielding an internally consistent combination |
+| `haul_logbook = TRUE` with `LE_SDATTIM` present | Pass 2 narrows assignment temporally before the catch-weight fallback, reducing Pass 3 cases |
+
+---
+
+### Cases the Process Does Not Handle Correctly
+
+The setup chunk below is required for all three runnable examples.
+
+```r
+library(dplyr)
+library(data.table)
+
+# Custom NOT-IN operator (defined in 0_global.R)
+'%!in%' <- function(x, y) !('%in%'(x, y))
+
+# trip_assign is defined in 0_global.R — source it before running these examples:
+# source("path/to/0_global.R")
+```
+
+---
+
+#### Case 1 — Minority combination permanently lost
+
+When a trip has two coherent combinations on the same day and all columns are
+ambiguous, Pass 3 selects each column's dominant value independently. If those
+dominant values happen to co-occur they form one consistent combination; the other
+combination is never assigned to any ping regardless of its catch weight.
+
+```r
+# EFLALO: trip T01, one day, two events — both columns ambiguous.
+eflalo_c1 <- tribble(
+  ~FT_REF, ~LE_CDAT,     ~LE_GEAR, ~LE_RECT, ~LE_KG_TOT,
+  "T01",   "09/03/2024", "OTB",    "41G9",    800,
+  "T01",   "09/03/2024", "GNS",    "41H0",    200
+)
+
+# TACSAT: three pings on 09/03, coarse match (Step 6) gave first eflalo row.
+tacsatp_c1 <- tribble(
+  ~FT_REF, ~SI_DATE,     ~VE_REF, ~LE_GEAR, ~LE_RECT,
+  "T01",   "09/03/2024", "V01",   "OTB",    "41G9",
+  "T01",   "09/03/2024", "V01",   "OTB",    "41G9",
+  "T01",   "09/03/2024", "V01",   "OTB",    "41G9"
+)
+
+# Step 7 — trip_assign for LE_GEAR
+# Day 09/03 has OTB and GNS → ambiguous → all pings NA after Pass 1 → Pass 3.
+# Trip total: OTB = 800, GNS = 200 → OTB wins.
+result_gear <- trip_assign(tacsatp_c1, eflalo_c1, col = "LE_GEAR", haul_logbook = FALSE)
+result_gear |> select(FT_REF, SI_DATE, LE_GEAR)
+# All three pings: LE_GEAR = OTB
+
+# Splice back
+tacsatp_c1 <- rbindlist(
+  list(tacsatp_c1[tacsatp_c1$FT_REF %!in% result_gear$FT_REF, ], result_gear),
+  fill = TRUE
+)
+
+# Step 7 — trip_assign for LE_RECT
+# Day 09/03 has 41G9 and 41H0 → ambiguous → all pings NA after Pass 1 → Pass 3.
+# Trip total: 41G9 = 800, 41H0 = 200 → 41G9 wins.
+result_rect <- trip_assign(tacsatp_c1, eflalo_c1, col = "LE_RECT", haul_logbook = FALSE)
+result_rect |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
+# All three pings: LE_GEAR = OTB, LE_RECT = 41G9
+#
+# The combination (GNS, 41H0) — 200 kg, a real logbook event — is never
+# assigned to any ping. It is permanently absent from the output.
+```
+
+---
+
+#### Case 2 — Phantom combination from independent column fallbacks
+
+When pings fall on a day where one column is unambiguous (resolved by Pass 1) but
+another is ambiguous (deferred to Pass 3), and the Pass 3 fallback for the ambiguous
+column is dominated by a different gear's activity on a different day, the resulting
+combination may never have appeared in the logbook.
+
+```r
+# EFLALO: trip T02.
+#   Day 05/03: OTB fished in two rectangles (41G9 = 100 kg, 41F8 = 50 kg).
+#   Day 06/03: GNS fished in one rectangle (41H0 = 500 kg) — a completely
+#              separate gear in a completely separate rectangle.
+eflalo_c2 <- tribble(
+  ~FT_REF, ~LE_CDAT,     ~LE_GEAR, ~LE_RECT, ~LE_KG_TOT,
+  "T02",   "05/03/2024", "OTB",    "41G9",    100,
+  "T02",   "05/03/2024", "OTB",    "41F8",     50,
+  "T02",   "06/03/2024", "GNS",    "41H0",    500
+)
+
+# TACSAT: two pings on 05/03 (OTB day). No pings on 06/03 (e.g., port day).
+# Coarse match (Step 6) gave first eflalo row values: OTB / 41G9.
+tacsatp_c2 <- tribble(
+  ~FT_REF, ~SI_DATE,     ~VE_REF, ~LE_GEAR, ~LE_RECT,
+  "T02",   "05/03/2024", "V01",   "OTB",    "41G9",
+  "T02",   "05/03/2024", "V01",   "OTB",    "41G9"
+)
+
+# Step 7 — trip_assign for LE_GEAR
+# Day 05/03: only OTB → unambiguous → OTB assigned via Pass 1. Correct.
+result_gear2 <- trip_assign(tacsatp_c2, eflalo_c2, col = "LE_GEAR", haul_logbook = FALSE)
+result_gear2 |> select(FT_REF, SI_DATE, LE_GEAR)
+# Both pings: LE_GEAR = OTB  ✓
+
+tacsatp_c2 <- rbindlist(
+  list(tacsatp_c2[tacsatp_c2$FT_REF %!in% result_gear2$FT_REF, ], result_gear2),
+  fill = TRUE
+)
+
+# Step 7 — trip_assign for LE_RECT
+# Day 05/03: 41G9 and 41F8 → ambiguous → NA after Pass 1 → Pass 3.
+# Trip totals: 41G9 = 100, 41F8 = 50, 41H0 = 500.
+# 41H0 wins — driven entirely by GNS activity on 06/03.
+# OTB never visited 41H0 in the logbook.
+result_rect2 <- trip_assign(tacsatp_c2, eflalo_c2, col = "LE_RECT", haul_logbook = FALSE)
+result_rect2 |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
+# Both pings: LE_GEAR = OTB, LE_RECT = 41H0
+#
+# LE_RECT = 41H0 is a phantom: no logbook row records OTB in 41H0.
+# The assignment was driven by GNS catch on a different day inflating 41H0's
+# trip-level total in the independent Pass 3 aggregation for LE_RECT.
+```
+
+---
+
+#### Case 3 — Correct column contaminated by cross-day activity
+
+When one column is unambiguous on a day (resolved correctly by Pass 1) but another
+column is ambiguous on the same day (deferred to Pass 3), the Pass 3 aggregation
+uses trip-level totals that include other days and other gears. This can cause
+pings to be assigned a rectangle whose selection was driven by a different gear's
+activity on a different day — overriding the within-day signal.
+
+```r
+# EFLALO: trip T03.
+#   Day 07/03: OTB fished in two rectangles (41H0 = 300 kg, 41G9 = 200 kg).
+#              On this day, 41H0 was the dominant OTB rectangle (300 > 200).
+#   Day 08/03: GNS fished in 41G9 (400 kg), inflating 41G9's trip total.
+eflalo_c3 <- tribble(
+  ~FT_REF, ~LE_CDAT,     ~LE_GEAR, ~LE_RECT, ~LE_KG_TOT,
+  "T03",   "07/03/2024", "OTB",    "41H0",    300,
+  "T03",   "07/03/2024", "OTB",    "41G9",    200,
+  "T03",   "08/03/2024", "GNS",    "41G9",    400
+)
+
+# TACSAT: two pings on 07/03. Coarse match gave first eflalo row: OTB / 41H0.
+tacsatp_c3 <- tribble(
+  ~FT_REF, ~SI_DATE,     ~VE_REF, ~LE_GEAR, ~LE_RECT,
+  "T03",   "07/03/2024", "V01",   "OTB",    "41H0",
+  "T03",   "07/03/2024", "V01",   "OTB",    "41H0"
+)
+
+# Step 7 — trip_assign for LE_GEAR
+# Day 07/03: only OTB → unambiguous → OTB via Pass 1.  Correct.
+result_gear3 <- trip_assign(tacsatp_c3, eflalo_c3, col = "LE_GEAR", haul_logbook = FALSE)
+result_gear3 |> select(FT_REF, SI_DATE, LE_GEAR)
+# Both pings: LE_GEAR = OTB  ✓
+
+tacsatp_c3 <- rbindlist(
+  list(tacsatp_c3[tacsatp_c3$FT_REF %!in% result_gear3$FT_REF, ], result_gear3),
+  fill = TRUE
+)
+
+# Step 7 — trip_assign for LE_RECT
+# Day 07/03: 41H0 and 41G9 → ambiguous → NA after Pass 1 → Pass 3.
+# Trip totals: 41H0 = 300, 41G9 = 200 + 400 = 600.
+# 41G9 wins — but the 400 kg contribution comes from GNS on 08/03,
+# not from OTB on 07/03. Within day 07/03, OTB's dominant rectangle was 41H0.
+result_rect3 <- trip_assign(tacsatp_c3, eflalo_c3, col = "LE_RECT", haul_logbook = FALSE)
+result_rect3 |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
+# Both pings: LE_GEAR = OTB, LE_RECT = 41G9
+#
+# LE_RECT = 41G9 is not a phantom (OTB did visit 41G9 on 07/03, 200 kg),
+# but it is the wrong choice: 41H0 was the higher-catch OTB rectangle that day.
+# The 41G9 assignment was driven by GNS catch on 08/03 contaminating the
+# trip-level aggregation used in the independent Pass 3 call for LE_RECT.
+```
+
+---
+
+### Alternative: dplyr Join Skeleton (Preserves Joint Combinations)
+
+This alternative assumes EFLALO has been decomposed into two tables:
+
+- `trips` — one row per trip; holds `VE_` and `FT_` variables (`vid`, `tid`,
+  `T1`, `T2`, vessel characteristics).
+- `events` — one row per logbook event; holds `LE_` variables (`tid`, `date`,
+  `LE_GEAR`, `LE_MSZ`, `LE_RECT`, `LE_MET`, `LE_WIDTH`, `LE_KG_TOT`, …).
+
+```r
+# Step 1 — assign trip to each ping via interval join
+tacsat <- tacsat |>
+  left_join(trips, by = join_by(vid, T1 <= time, T2 >= time))
+
+# Step 2 — assign all LE_ variables jointly from the matching event row
+tacsat <- tacsat |>
+  left_join(events, by = join_by(tid, ping_date == date))
+
+# Step 3 — fallback: for pings with no date-matching event,
+#           use the single highest-catch event for the trip
+dominant_event <- events |>
+  slice_max(LE_KG_TOT, by = tid, with_ties = FALSE)
+
+tacsat <- tacsat |>
+  left_join(dominant_event, by = "tid", suffix = c("", "_fallback")) |>
+  mutate(
+    LE_GEAR = coalesce(LE_GEAR, LE_GEAR_fallback),
+    LE_RECT = coalesce(LE_RECT, LE_RECT_fallback),
+    # ... remaining LE_ columns
+  )
+```
+
+**What this resolves.** All `LE_` variables are drawn from the same event row in
+Step 2, so cross-column inconsistency and phantom combinations cannot arise. The
+fallback in Step 3 also preserves joint coherence — all unresolved pings receive the
+same dominant event row rather than independently chosen column values.
+
+**Residual open issue.** Step 2 produces duplicate ping rows when a single calendar
+day within a trip has more than one logbook event (the many-to-many case). This
+requires an explicit deduplication or pre-aggregation strategy — the same problem
+`trip_assign` sidesteps by collapsing to one value per `(FT_REF, LE_CDAT)` before
+joining, at the cost of the column-independence limitation described above.[^7]
+
+---
+
+### Footnotes
+
+[^1]: The conditional checks (`if(!"D_DATIM" %in% colnames(eflalo2))`) mean the
+function is safe to call on data that has already been partially prepared, but also
+that silently pre-existing timestamp columns will be used as-is without format
+validation. Confirm formats match `"%d/%m/%Y %H:%M"` before calling.
+
+[^2]: The outer difference approach is equivalent to a non-equi interval join but
+computed as dense matrices in base R. Memory cost scales as O(n_pings × n_trips)
+per vessel. For vessels with many trips and many pings this can become large; the
+split-by-vessel structure mitigates this but does not eliminate it.
+
+[^3]: Because `match` returns the **first** matching row index in `eflalo`, the
+value assigned depends on the row order of `eflalo`. If `eflalo` is not sorted
+consistently this can introduce non-deterministic behaviour for multi-event trips.
+
+[^4]: For `LE_MET`, `trip_assign` additionally restricts the distinct-value count
+to members of the `valid_metiers` vector, which is loaded from the ICES RCG metier
+reference list in `0_global.R` via `metier_table$Metier_level6`. Trips where all
+metier values are invalid (e.g. all `NA` or unrecognised codes) will not be flagged
+as multi-value and will pass through with whatever Step 6 assigned.
+
+[^5]: Pass 2 constructs `meantime` from both haul start (`LE_SDATTIM`) and haul end
+(`LE_EDATTIM`), stacks them with `rbind`, then uses `data.table`'s rolling join
+(`roll = "nearest"`). The result is that each unmatched ping is assigned to the
+nearest haul boundary in time, regardless of whether that boundary is a start or
+end. This can assign a ping to a haul that had already finished or not yet started
+if the gap is large.
+
+[^6]: Whether the output combination is "phantom" in any given run depends on the
+exact catch totals. The problem is structural: because the two `trip_assign` calls
+for `LE_GEAR` and `LE_RECT` operate on separate copies of `tacsatp` and make
+independent decisions, there is no guarantee that the selected values originate from
+the same source row, even when a single coherent dominant event exists.
+
+[^7]: The many-to-many issue in Step 2 of the dplyr skeleton can be handled by
+pre-aggregating events to one row per `(tid, date)` before joining — for example,
+taking the event with the highest `LE_KG_TOT` on each day within each trip. This is
+equivalent to a spatially and temporally aware version of what `trip_assign` does in
+Pass 1, but applied jointly to all columns at once, preserving their co-occurrence.

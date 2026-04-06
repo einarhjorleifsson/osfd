@@ -21,6 +21,6 @@ utils::globalVariables(c(
   "LE_ETIME", "lid",
   ".prev_max_t2", "t1", "t2",
   "dictionary", "lat", "lon", "events",
-  "s1", "s2"
+  "s1", "s2", ".pid"
   ))
 

@@ -32,31 +32,38 @@ remotes::install_github("einarhjorleifsson/osfd")
 
 ## Setting the stage
 
-Here load the needed libraries and load some demo data that reside on
-the web.
+Here load the needed libraries and load data.
 
 ``` r
-# library(conflicted).  # don't ever use this again
 library(sf)
 library(arrow)
 library(tidyverse)
 library(osfd)
-library(vmstools)
 ```
 
 ``` r
-pth_ports  <- "https://heima.hafro.is/~einarhj/data/ports_iceland_faroe.gpkg"
-pth_eflalo <- "https://heima.hafro.is/~einarhj/data/eflalo_IS.parquet"
-pth_tacsat <- "https://heima.hafro.is/~einarhj/data/tacsat_IS.parquet"
+ports  <- "https://heima.hafro.is/~einarhj/data/ports_iceland_faroe.gpkg" |> 
+  read_sf() |> 
+  select(port = pid)
+areas <- read_sf("data-raw/ices_areas.gpkg") |> 
+  select(area = Area_27)
+depth <- read_sf("data-raw/gebco_ices.gpkg")
+eusm  <- read_sf("data-raw/eusm.gpkg") |> # criminal size: ~120 million points!
+  filter(MSFD_BBHT != "")
 ```
 
 ``` r
-ports  <- read_sf(pth_ports)
-eflalo <- arrow::read_parquet(pth_eflalo)
-tacsat <- arrow::read_parquet(pth_tacsat)
+eflalo       <- "https://heima.hafro.is/~einarhj/data/eflalo_IS.parquet" |> 
+  arrow::read_parquet()
+tacsat       <- "https://heima.hafro.is/~einarhj/data/tacsat_IS.parquet" |> 
+  arrow::read_parquet()
+# fishing speed by gear and target
+state_lookup <- "https://heima.hafro.is/~einarhj/data/gear_mapping.parquet" |> 
+  arrow::read_parquet() |> 
+  select(gear, target, s1, s2)
 ```
 
-## Preprocessing
+## Pre-processing
 
 … text is pending, but here is an illustration of user code flow to
 complete the task.
@@ -64,38 +71,61 @@ complete the task.
 ``` r
 ais <- tacsat |> 
   fd_clean_tacsat() |> 
-  fd_flag_tacsat() |> 
-  # user interference possible
-  filter(.checks == "ok")
+  fd_flag_tacsat(no_hands = TRUE,
+                 minimum_interval_seconds = 30, 
+                 areas = areas, ports = ports)
 
-trips <- eflalo |> 
-  fd_clean_eflalo() |> 
+eflalo_clean <- eflalo |> fd_clean_eflalo()
+
+trips <- eflalo_clean |> 
   fd_trips() |> 
-  fd_flag_trips() |> 
-  # user interference possible
-  filter(.tchecks == "ok")
+  fd_flag_trips(no_hands = TRUE)
 
-events <- eflalo |>
-  fd_clean_eflalo() |> 
+events <- eflalo_clean |>
   fd_events() |> 
-  fd_flag_events() |> 
-  # user interference possible
-  filter(.echecks == "ok")
+  fd_flag_events(no_hands = TRUE,
+                 gear = icesVocab::getCodeList("GearType")$Key,
+                 met6 = icesVocab::getCodeList("Metier6_FishingActivity")$Key)
 ```
 
-## Analysis
+## Processing
 
-A little peek-a-boo
-
-### Assigning trips and events to pings
+A little peek-a-boo, … not run, only partially ready
 
 ``` r
 ais2 <- ais |> 
-  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |> 
-  fd_add_events(events)
+  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) 
+# trouble in add event paradise - for now a quick-fix 
+trouble <- 
+  fd_check_events_join(ais2, events) |> 
+  select(.eid:met6) |> 
+  distinct()
+ais3 <- ais2 |> 
+  fd_add_events(events |> filter(!.eid %in% trouble$.eid)) |> 
+  # here ais has to already have gear and target
+  fd_add_state(state_lookup) |> 
+  filter(state == "fishing") |> 
+  # fd_add_catch(events) |>                # pending    
+  osfd:::fd_add_sf(eusm) |> 
+  fd_add_sf(depth) |> 
+  mutate(csq = fd_calc_csq(lon, lat)) #|>
+  # fd_add_gearwith(gear_width_table) |>   # pending
+  # fd_calc_sa()                           # pending
 ```
 
-… before
+## Submission
+
+More peek-a-boo, … not run, not ready
+
+``` r
+# ... pending
+ais3 <- ais2 |> 
+  fd_final_tests() 
+ais3 |> fd_aggregate() |> fd_export_table1()
+ais3 |> fd_aggregate() |> fd_export_table2()
+```
+
+## Some testing
 
 ``` r
 # sidestep in order to run datacall way below
@@ -129,15 +159,128 @@ identical(merged$FT_REF, replace_na(aism$tid, "0"))
 #> [1] TRUE
 ```
 
-### Assigning events to pings
+## Small print
 
 ``` r
-# fd_add_events - not implemented yet
-ais_trips_events <- ais_trips |> 
-  left_join(events,
-            by = join_by(.tid,
-                         between(time, t1, t2)),
-            relationship = "many-to-one")
+devtools::session_info()
+#> ─ Session info ───────────────────────────────────────────────────────────────
+#>  setting  value
+#>  version  R version 4.5.2 (2025-10-31)
+#>  os       macOS Tahoe 26.3.1
+#>  system   aarch64, darwin20
+#>  ui       X11
+#>  language (EN)
+#>  collate  en_US.UTF-8
+#>  ctype    en_US.UTF-8
+#>  tz       Atlantic/Reykjavik
+#>  date     2026-04-06
+#>  pandoc   3.9.0.2 @ /opt/homebrew/bin/ (via rmarkdown)
+#>  quarto   1.8.26 @ /usr/local/bin/quarto
+#> 
+#> ─ Packages ───────────────────────────────────────────────────────────────────
+#>  package        * version    date (UTC) lib source
+#>  arrow          * 23.0.1.1   2026-02-24 [2] CRAN (R 4.5.2)
+#>  assertthat       0.2.1      2019-03-21 [2] CRAN (R 4.5.0)
+#>  backports        1.5.0      2024-05-23 [2] CRAN (R 4.5.0)
+#>  bit              4.6.0      2025-03-06 [2] CRAN (R 4.5.0)
+#>  bit64            4.6.0-1    2025-01-16 [2] CRAN (R 4.5.0)
+#>  boot             1.3-32     2025-08-29 [2] CRAN (R 4.5.2)
+#>  broom            1.0.12     2026-01-27 [2] CRAN (R 4.5.2)
+#>  cachem           1.1.0      2024-05-16 [2] CRAN (R 4.5.0)
+#>  class            7.3-23     2025-01-01 [2] CRAN (R 4.5.2)
+#>  classInt         0.4-11     2025-01-08 [1] CRAN (R 4.5.0)
+#>  cli              3.6.5      2025-04-23 [1] CRAN (R 4.5.0)
+#>  colorspace       2.1-2      2025-09-22 [2] CRAN (R 4.5.0)
+#>  cowplot          1.2.0      2025-07-07 [2] CRAN (R 4.5.0)
+#>  data.table       1.18.2.1   2026-01-27 [2] CRAN (R 4.5.2)
+#>  DBI              1.3.0      2026-02-25 [1] CRAN (R 4.5.2)
+#>  Deriv            4.2.0      2025-06-20 [2] CRAN (R 4.5.0)
+#>  devtools         2.5.0      2026-03-14 [2] CRAN (R 4.5.2)
+#>  digest           0.6.39     2025-11-19 [2] CRAN (R 4.5.2)
+#>  doBy             4.7.1      2025-12-02 [2] CRAN (R 4.5.2)
+#>  dplyr          * 1.2.1      2026-04-03 [1] CRAN (R 4.5.2)
+#>  e1071            1.7-17     2025-12-18 [1] CRAN (R 4.5.2)
+#>  ellipsis         0.3.2      2021-04-29 [2] CRAN (R 4.5.0)
+#>  evaluate         1.0.5      2025-08-27 [2] CRAN (R 4.5.0)
+#>  farver           2.1.2      2024-05-13 [2] CRAN (R 4.5.0)
+#>  fastmap          1.2.0      2024-05-15 [2] CRAN (R 4.5.0)
+#>  forcats        * 1.0.1      2025-09-25 [2] CRAN (R 4.5.0)
+#>  forecast         9.0.2      2026-03-18 [2] CRAN (R 4.5.2)
+#>  fracdiff         1.5-3      2024-02-01 [2] CRAN (R 4.5.0)
+#>  fs               1.6.7      2026-03-06 [2] CRAN (R 4.5.2)
+#>  generics         0.1.4      2025-05-09 [1] CRAN (R 4.5.0)
+#>  ggplot2        * 4.0.2      2026-02-03 [2] CRAN (R 4.5.2)
+#>  glue             1.8.0      2024-09-30 [1] CRAN (R 4.5.0)
+#>  gtable           0.3.6      2024-10-25 [2] CRAN (R 4.5.0)
+#>  hms              1.1.4      2025-10-17 [2] CRAN (R 4.5.0)
+#>  htmltools        0.5.9      2025-12-04 [2] CRAN (R 4.5.2)
+#>  htmlwidgets      1.6.4      2023-12-06 [2] CRAN (R 4.5.0)
+#>  httr             1.4.8      2026-02-13 [2] CRAN (R 4.5.2)
+#>  jsonlite         2.0.0      2025-03-27 [2] CRAN (R 4.5.0)
+#>  kernlab          0.9-33     2024-08-13 [2] CRAN (R 4.5.0)
+#>  KernSmooth       2.23-26    2025-01-01 [2] CRAN (R 4.5.2)
+#>  knitr            1.51       2025-12-20 [2] CRAN (R 4.5.2)
+#>  lattice          0.22-9     2026-02-09 [2] CRAN (R 4.5.2)
+#>  lazyeval         0.2.2      2019-03-15 [2] CRAN (R 4.5.0)
+#>  lifecycle        1.0.5      2026-01-08 [1] CRAN (R 4.5.2)
+#>  lubridate      * 1.9.5      2026-02-04 [1] CRAN (R 4.5.2)
+#>  magrittr         2.0.5      2026-04-04 [1] CRAN (R 4.5.2)
+#>  MASS             7.3-65     2025-02-28 [2] CRAN (R 4.5.2)
+#>  Matrix           1.7-5      2026-03-21 [2] CRAN (R 4.5.2)
+#>  memoise          2.0.1      2021-11-26 [2] CRAN (R 4.5.0)
+#>  microbenchmark   1.5.0      2024-09-04 [2] CRAN (R 4.5.0)
+#>  mixtools         2.0.0.1    2025-03-08 [2] CRAN (R 4.5.0)
+#>  modelr           0.1.11     2023-03-22 [2] CRAN (R 4.5.0)
+#>  nlme             3.1-168    2025-03-31 [2] CRAN (R 4.5.2)
+#>  osfd           * 0.0.0.9000 2026-04-06 [1] local
+#>  otel             0.2.0      2025-08-29 [2] CRAN (R 4.5.0)
+#>  pillar           1.11.1     2025-09-17 [1] CRAN (R 4.5.0)
+#>  pkgbuild         1.4.8      2025-05-26 [2] CRAN (R 4.5.0)
+#>  pkgconfig        2.0.3      2019-09-22 [1] CRAN (R 4.5.0)
+#>  pkgload          1.5.0      2026-02-03 [2] CRAN (R 4.5.2)
+#>  plotly           4.12.0     2026-01-24 [2] CRAN (R 4.5.2)
+#>  proxy            0.4-29     2025-12-29 [1] CRAN (R 4.5.2)
+#>  purrr          * 1.2.1      2026-01-09 [1] CRAN (R 4.5.2)
+#>  R6               2.6.1      2025-02-15 [1] CRAN (R 4.5.0)
+#>  RColorBrewer     1.1-3      2022-04-03 [2] CRAN (R 4.5.0)
+#>  Rcpp             1.1.1      2026-01-10 [1] CRAN (R 4.5.2)
+#>  readr          * 2.2.0      2026-02-19 [2] CRAN (R 4.5.2)
+#>  rlang            1.1.7      2026-01-09 [1] CRAN (R 4.5.2)
+#>  rmarkdown        2.30       2025-09-28 [2] CRAN (R 4.5.0)
+#>  rstudioapi       0.18.0     2026-01-16 [2] CRAN (R 4.5.2)
+#>  s2               1.1.9      2025-05-23 [1] CRAN (R 4.5.0)
+#>  S7               0.2.1      2025-11-14 [2] CRAN (R 4.5.2)
+#>  scales           1.4.0      2025-04-24 [2] CRAN (R 4.5.0)
+#>  segmented        2.2-1      2026-01-29 [2] CRAN (R 4.5.2)
+#>  sessioninfo      1.2.3      2025-02-05 [2] CRAN (R 4.5.0)
+#>  sf             * 1.1-0      2026-02-24 [1] CRAN (R 4.5.2)
+#>  stringi          1.8.7      2025-03-27 [1] CRAN (R 4.5.0)
+#>  stringr        * 1.6.0      2025-11-04 [1] CRAN (R 4.5.0)
+#>  survival         3.8-6      2026-01-16 [2] CRAN (R 4.5.2)
+#>  tibble         * 3.3.1      2026-01-11 [1] CRAN (R 4.5.2)
+#>  tidyr          * 1.3.2      2025-12-19 [1] CRAN (R 4.5.2)
+#>  tidyselect       1.2.1      2024-03-11 [1] CRAN (R 4.5.0)
+#>  tidyverse      * 2.0.0      2023-02-22 [2] CRAN (R 4.5.0)
+#>  timechange       0.4.0      2026-01-29 [1] CRAN (R 4.5.2)
+#>  timeDate         4052.112   2026-01-28 [2] CRAN (R 4.5.2)
+#>  tzdb             0.5.0      2025-03-15 [2] CRAN (R 4.5.0)
+#>  units            1.0-1      2026-03-11 [1] CRAN (R 4.5.2)
+#>  urca             1.3-4      2024-05-27 [2] CRAN (R 4.5.0)
+#>  usethis          3.2.1      2025-09-06 [2] CRAN (R 4.5.0)
+#>  vctrs            0.7.2      2026-03-21 [1] CRAN (R 4.5.2)
+#>  viridisLite      0.4.3      2026-02-04 [2] CRAN (R 4.5.2)
+#>  vmstools         0.77       2026-03-26 [2] local (/Users/einarhj/Documents/stasi/fishydata/vmstools_0.77.tar.gz)
+#>  withr            3.0.2      2024-10-28 [1] CRAN (R 4.5.0)
+#>  wk               0.9.5      2025-12-18 [1] CRAN (R 4.5.2)
+#>  xfun             0.57       2026-03-20 [2] CRAN (R 4.5.2)
+#>  yaml             2.3.12     2025-12-10 [2] CRAN (R 4.5.2)
+#>  zoo              1.8-15     2025-12-15 [2] CRAN (R 4.5.2)
+#> 
+#>  [1] /private/var/folders/14/1_h9q5hn2h93byhrkzp8jfj00000gp/T/Rtmpy5rJaJ/temp_libpath175c965cf4144
+#>  [2] /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/library
+#>  * ── Packages attached to the search path.
+#> 
+#> ──────────────────────────────────────────────────────────────────────────────
 ```
 
 ## License

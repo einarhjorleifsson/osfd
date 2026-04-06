@@ -353,3 +353,56 @@ csq2lonlat <- function(csq, degrees = 0.05) {
 ICESrectangle <- function(dF) {
   d2ir(lon = dF[, "SI_LONG"], lat = dF[, "SI_LATI"])
 }
+
+
+# sf::sf_use_s2(FALSE)
+
+#' Spatially join an sf polygon layer onto AIS/VMS pings
+#'
+#' Converts `ais` to an `sf` point object (if not already) using columns `lon`
+#' and `lat` (CRS 4326), then performs a spatial left join with `shape` via
+#' [sf::st_join()]. A row-count guard stops if the join inflates the number of
+#' rows, which would indicate a one-to-many match (overlapping polygons).
+#'
+#' @param ais Data frame or `sf` object of VMS/AIS pings. If not already `sf`,
+#'   must contain columns `lon` and `lat`.
+#' @param shape An `sf` polygon object to join onto `ais`.
+#'
+#' @return An `sf` object with the same number of rows as `ais`, augmented with
+#'   columns from `shape`.
+#'
+#' @note The row-count guard stops with an uninformative message if `shape`
+#'   contains overlapping polygons causing a one-to-many join. Consider
+#'   using [sf::st_join()] with `largest = TRUE` or pre-dissolving overlaps
+#'   if this is a concern.
+#'
+#' @export
+fd_add_sf <- function(ais, shape) {
+
+  s2_state <- sf::sf_use_s2()
+  sf::sf_use_s2(FALSE)
+
+  if(!inherits(shape, "sf")) stop("Added file not a shapefile")
+
+  rows <- nrow(ais)
+
+  if (!inherits(ais, "sf")) {
+    ais <-
+      ais |>
+      sf::st_as_sf(coords = c("lon", "lat"),
+                   crs = 4326,
+                   remove = FALSE)
+  }
+
+
+  ais <-
+    ais |>
+    sf::st_join(shape)
+
+  if(nrow(ais) > rows) stop("Screeeeeam")
+
+  sf::sf_use_s2(s2_state)
+
+  return(ais)
+
+}

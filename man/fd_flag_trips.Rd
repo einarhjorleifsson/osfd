@@ -4,7 +4,7 @@
 \alias{fd_flag_trips}
 \title{Check for Temporal Overlaps in Fishing Trips}
 \usage{
-fd_flag_trips(trips)
+fd_flag_trips(trips, no_hands = TRUE)
 }
 \arguments{
 \item{trips}{A data frame containing fishing trip data with at minimum the
@@ -13,9 +13,20 @@ reference), \code{T1} (\code{FT_DDATIM}, departure date/time), \code{T2} (\code{
 landing date/time), \code{length} (\code{VE_LEN}), and \code{kw} (\code{VE_KW}). Typically
 produced by \code{\link{fd_trips}}. Input must be sorted by \code{T1} within
 each vessel (handled by \code{fd_clean_eflalo()}).}
+
+\item{no_hands}{Logical. Controls whether failing trips are automatically
+removed from the output. When \code{TRUE} (default, production mode), trips
+where \code{.tchecks != "ok"} are filtered out and the \code{.tchecks} column is
+dropped before returning. When \code{FALSE} (diagnostic mode), all trips are
+returned with \code{.tchecks} appended so you can inspect failures.}
 }
 \value{
-The input data frame with a \code{.tchecks} character column appended.
+\itemize{
+\item \code{no_hands = TRUE} (default): The input data frame filtered to passing
+trips only, with \code{.tchecks} dropped.
+\item \code{no_hands = FALSE}: The full input data frame with a \code{.tchecks}
+character column appended (first failing check label, or \code{"ok"}).
+}
 }
 \description{
 Validates the temporal sequence of fishing trips for each vessel by checking
@@ -23,31 +34,39 @@ for overlapping or out-of-sequence departure and arrival times. This function
 is typically applied after extracting trips with \code{\link{fd_trips}}.
 }
 \details{
-\strong{This function never filters.} Filtering is deliberately left to the caller:
+By default (\code{no_hands = TRUE}) the function filters out failing trips and
+drops \code{.tchecks} before returning — suitable for production pipelines. Set
+\code{no_hands = FALSE} to retain all trips with the \code{.tchecks} label for
+interactive diagnostics:
 
 \if{html}{\out{<div class="sourceCode r">}}\preformatted{trips |>
-  fd\\_flag\\_trips() |>
-  dplyr::filter(.tchecks == "ok")
+  fd\\_flag\\_trips(no_hands = FALSE) |>
+  dplyr::count(.tchecks)
 }\if{html}{\out{</div>}}
 
 Checks are performed in the following order and return the first failure:
 \describe{
 \item{\code{"01 departure missing"}}{\code{T1} (\code{FT_DDATIM}) is \code{NA}}
 \item{\code{"02 arrival missing"}}{\code{T2} (\code{FT_LDATIM}) is \code{NA}}
-\item{\code{"03 departure after arrival"}}{\code{T1 > T2} — time travel not supported}
-\item{\code{"04 departure equals arrival"}}{\code{T1 == T2} — a trip of zero duration}
-\item{\code{"05 next departure before current arrival"}}{Temporal overlap: the next trip departs before this one lands}
-\item{\code{"06 previous arrival after current departure"}}{Temporal overlap: the previous trip's landing is after this departure}
-\item{\code{"07 no vessel length"}}{\code{length} (\code{VE_LEN}) is \code{NA} (informational — required for gear width and swept area)}
-\item{\code{"08 no engine power"}}{\code{kw} (\code{VE_KW}) is \code{NA} (informational — gear width falls back to lookup table defaults)}
+\item{\code{"03 new years trip"}}{Departure year is exactly one less than landing year — the trip crosses a year boundary, which is typically a data error}
+\item{\code{"04 departure after arrival"}}{\code{T1 > T2} — time travel not supported}
+\item{\code{"05 departure equals arrival"}}{\code{T1 == T2} — a trip of zero duration}
+\item{\code{"06 next departure before current arrival"}}{Temporal overlap: the next trip departs before this one lands}
+\item{\code{"07 previous arrival after current departure"}}{Temporal overlap: the previous trip's landing is after this departure}
+\item{\code{"08 no vessel length"}}{\code{length} (\code{VE_LEN}) is \code{NA} (informational — required for gear width and swept area)}
+\item{\code{"09 no engine power"}}{\code{kw} (\code{VE_KW}) is \code{NA} (informational — gear width falls back to lookup table defaults)}
 \item{\code{"ok"}}{All checks passed}
 }
 }
 \examples{
 \dontrun{
-  trips <- fd_trips(eflalo)
-  trips_checked <- fd_flag_trips(trips)
-  dplyr::filter(trips_checked, !grepl("^ok", .tchecks))
+# Production: get only valid trips
+trips <- fd_trips(eflalo) |> fd_flag_trips()
+
+# Diagnostic: inspect all check labels
+fd_trips(eflalo) |>
+  fd_flag_trips(no_hands = FALSE) |>
+  dplyr::filter(.tchecks != "ok")
 }
 
 }

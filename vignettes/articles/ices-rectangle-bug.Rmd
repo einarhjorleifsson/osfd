@@ -1,0 +1,154 @@
+---
+title: "The ICESrectangle zone-A bug"
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  message  = FALSE,
+  warning  = FALSE
+)
+```
+
+## Background
+
+ICES statistical rectangles are the standard spatial grid for European fisheries
+data, including the VMS/logbook data call. Every VMS ping and every logbook event
+is assigned an ICES rectangle code such as `"41E9"` or `"57A2"`.
+
+The rectangle code has four parts:
+
+| Part | Example | Meaning |
+|------|---------|---------|
+| Two-digit number | `57` | Latitude band (0.5° increments, starting at 36°N) |
+| Letter | `A`–`M` (no `I`) | Longitude zone (nominally 10° wide) |
+| Single digit | `0`–`9` | 1° column within the zone |
+
+The key word is *nominally*. Zone A is a special case.
+
+## Zone A is only 4 degrees wide
+
+The western boundary of the ICES statistical area is **44°W**, not 50°W. Zone A
+therefore spans only **-44° to -40°** — four degrees, not ten. Consequently,
+zone A contains only **four** valid rectangles per latitude band (A0–A3), each
+representing a 1° column:
+
+| Rectangle | Longitude range |
+|-----------|-----------------|
+| A0        | -44° to -43°    |
+| A1        | -43° to -42°    |
+| A2        | -42° to -41°    |
+| A3        | -41° to -40°    |
+
+Codes A4 through A9 do not exist.
+
+## The bug in `ICESrectangle()`
+
+The `ICESrectangle()` function from `vmstools` (widely used in the ICES data
+call processing chain) incorrectly extends zone A all the way to **-50°W** and
+applies the same 10° modular arithmetic it uses for every other zone. For the
+actual ICES area (within -44° to -40°), this produces digit offsets of 6–9
+instead of the correct 0–3.
+
+```{r, echo = FALSE}
+library(dplyr)
+library(osfd)
+
+ICESrectangle_orig <- function(dF) {
+  rectChar1n2 <- sprintf("%02i", as.integer(2 * (dF[, "SI_LATI"] - 35.5)))
+  rectChar3 <- ifelse(dF[, "SI_LONG"] > -50 & dF[, "SI_LONG"] <= -40, "A",
+    ifelse(dF[, "SI_LONG"] > -40 & dF[, "SI_LONG"] <= -30, "B",
+      ifelse(dF[, "SI_LONG"] > -30 & dF[, "SI_LONG"] <= -20, "C",
+        ifelse(dF[, "SI_LONG"] > -20 & dF[, "SI_LONG"] <= -10, "D",
+          ifelse(dF[, "SI_LONG"] > -10 & dF[, "SI_LONG"] < 0, "E",
+            ifelse(dF[, "SI_LONG"] >= 0 & dF[, "SI_LONG"] < 10, "F",
+              ifelse(dF[, "SI_LONG"] >= 10 & dF[, "SI_LONG"] < 20, "G",
+                ifelse(dF[, "SI_LONG"] >= 20 & dF[, "SI_LONG"] < 30, "H", "J"))))))))
+  rectChar4 <- rep(NA, nrow(dF))
+  idxlowzero  <- which(dF[, "SI_LONG"] < 0)
+  idxabozero  <- which(dF[, "SI_LONG"] >= 0)
+  if (length(idxlowzero) > 0)
+    rectChar4[idxlowzero] <- ceiling(dF[idxlowzero, "SI_LONG"] %% 10 - 1 + 10) %% 10
+  if (length(idxabozero) > 0)
+    rectChar4[idxabozero] <- floor(dF[idxabozero, "SI_LONG"] %% 10)
+  paste(rectChar1n2, rectChar3, rectChar4, sep = "")
+}
+```
+
+```{r}
+# The four 1-degree columns that actually exist in zone A (midpoints shown)
+tibble(
+  lon_midpoint = seq(-43.5, -40.5, by = 1),
+  lat = 64
+) |>
+  mutate(
+    ICESrectangle = ICESrectangle_orig(
+      data.frame(SI_LONG = lon_midpoint, SI_LATI = lat)
+    ),
+    d2ir = d2ir(lon_midpoint, lat)
+  )
+```
+
+Every zone-A record processed through `ICESrectangle()` carries an impossible
+rectangle code. The digit is wrong by exactly 6 (the offset between where the
+function *thinks* zone A starts, at -50°, and where it actually starts, at -44°).
+
+## A secondary issue: the zone boundary convention
+
+There is a second, smaller discrepancy at the boundaries between zones. The
+legacy function uses `> lower & <= upper` for negative-longitude zones and
+`>= lower & < upper` for non-negative zones. This inconsistency means a point
+at exactly **-40°**, **-30°**, **-20°**, or **-10°** is placed in the *western*
+zone, while `d2ir` (following `geo::d2ir`) places it in the *eastern* zone via
+a `+1e-6` nudge.
+
+```{r}
+tibble(lon = c(-40.001, -40.000, -39.999), lat = 62) |>
+  mutate(
+    ICESrectangle = ICESrectangle_orig(
+      data.frame(SI_LONG = lon, SI_LATI = lat)
+    ),
+    d2ir = d2ir(lon, lat)
+  )
+```
+
+In practice, pings rarely land on exact integer longitudes, so this matters less
+than the zone-A digit error. It is worth noting nonetheless when comparing
+datasets processed by different tools.
+
+## The corrected function: `d2ir()`
+
+`osfd` provides `d2ir(lon, lat)` as a drop-in replacement. It follows the
+`geo::d2ir` convention:
+
+- Zone A uses **4° sub-divisions** (digits 0–3), matching the actual ICES extent.
+- Boundary points receive the `+1e-6` nudge and fall into the eastern rectangle.
+- Positions outside the ICES area (lat < 36, lat ≥ 85.5, lon ≤ -44, lon > 68.5)
+  return `NA` rather than a nonsensical code.
+- All operations (`floor()`, `%%`, `case_when()`, `paste0()`) are SQL-translatable,
+  so the function works inside `dplyr::mutate()` on both in-memory data frames and
+  lazy DuckDB tables.
+
+```{r}
+tibble(
+  lon = c(-43.5, -5.0, 10.0, 25.0),
+  lat = c( 64.0, 63.2, 58.0, 60.0)
+) |>
+  mutate(rect = d2ir(lon, lat))
+```
+
+## Implication for historical data call outputs
+
+Any catch or effort aggregated by `LE_RECT` using `ICESrectangle()` in the
+zone-A area will have been attributed to non-existent rectangle codes. Depending
+on how downstream products consume the rectangle field — joining against ICES
+reference grids, plotting on maps, or aggregating to sub-area level — these
+records may have been silently dropped or miscounted.
+
+The affected geographic area is small (roughly the southern tip of Greenland
+and the waters around Iceland's east coast extending to the Faroe–Iceland
+ridge), but it covers an important fishing region for several ICES member states.
+Re-running the data call pipeline with `d2ir()` in place of `ICESrectangle()`
+will produce corrected rectangle codes for all zone-A positions.
+```

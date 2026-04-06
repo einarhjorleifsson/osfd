@@ -79,18 +79,145 @@ fd_add_trips <- function(ais, trips, cn = c("tid", ".tid"), remove = TRUE) {
   return(ais)
 }
 
-#' Title
+#' Add Fishing Event Information to Vessel Tracking Data
 #'
-#' @param ais xxx
-#' @param events xxx
+#' @description
+#' Joins vessel tracking positions (VMS/AIS) with fishing event information from
+#' the logbook based on the internal trip identifier (`.tid`) and a timestamp
+#' overlap (`time` between `t1` and `t2`). All event columns are carried across;
+#' pings that fall outside any event window receive `NA` for those columns.
 #'
-#' @returns xxx
+#' This function is intended to be called after \code{\link{fd_add_trips}}, which
+#' adds `.tid` to the `ais` data frame.
+#'
+#' @param ais A data frame of vessel tracking positions after
+#'   \code{\link{fd_add_trips}} has been applied. Must contain `.tid` and
+#'   `time` (POSIXct).
+#' @param events A data frame of fishing events as returned by
+#'   \code{\link{fd_events}} (and typically filtered by
+#'   \code{\link{fd_flag_events}}). Must contain `.tid`, `t1` (POSIXct), and
+#'   `t2` (POSIXct).
+#'
+#' @return `ais` with all columns from `events` appended. Pings outside any
+#'   event window have `NA` for event columns.
+#'
+#' @details
+#' The join is keyed on `.tid` (internal trip identifier) and
+#' `dplyr::between(time, t1, t2)`. The intended relationship is many-to-one:
+#' each ping should fall within at most one event window per trip. If any ping
+#' matches more than one event — because event windows overlap or share identical
+#' dummy times (`t1 = 00:01`, `t2 = 23:59`) — the row count of `ais` increases
+#' and the function stops with an informative error.
+#'
+#' Use \code{\link{fd_check_events_join}} to diagnose which pings and windows
+#' are responsible before re-running.
+#'
+#' Note that `t1` and `t2` in the events table are derived by
+#' \code{\link{fd_clean_eflalo}}: when real start/end times (`LE_STIME`/
+#' `LE_ETIME`) are absent, both are set to synthetic placeholder values
+#' (`00:01` and `23:59` on the catch date, `.tsrc = "dummy"`). These dummy
+#' windows span the full day and will match every ping recorded on that date for
+#' the trip — a valid approximation when events are unique per day, but a source
+#' of many-to-many conflicts when multiple events share the same date.
+#'
+#' @seealso
+#'   \code{\link{fd_add_trips}} for the preceding join step,
+#'   \code{\link{fd_check_events_join}} for diagnosing join conflicts,
+#'   \code{\link{fd_events}} and \code{\link{fd_flag_events}} for preparing the
+#'   events input.
+#'
+#' @examples
+#' \dontrun{
+#' ais2 <- ais |>
+#'   fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |>
+#'   fd_add_events(events)
+#'
+#' # If fd_add_events() errors, diagnose with:
+#' conflicts <- fd_check_events_join(ais2_pre, events)
+#' conflicts |> dplyr::count(.tid, t1, t2, sort = TRUE)
+#' }
+#'
 #' @export
-#'
 fd_add_events <- function(ais, events) {
-  ais |>
+  rows <- nrow(ais)
+
+  ais <- ais |>
     dplyr::left_join(events,
                      by = dplyr::join_by(.tid,
-                                         dplyr::between(time, t1, t2)),
-                     relationship = "many-to-one")
+                                         dplyr::between(time, t1, t2)))
+
+  if (nrow(ais) != rows)
+    stop(
+      "Row count increased after join: ",
+      nrow(ais) - rows, " extra row(s) — one or more pings matched multiple events.\n",
+      "Use fd_check_events_join() to identify the conflicting windows.",
+      call. = FALSE
+    )
+
+  ais
+}
+
+
+#' Diagnose many-to-many conflicts before joining events to pings
+#'
+#' @description
+#' Performs the same join as \code{\link{fd_add_events}} but **without** a
+#' relationship constraint, then returns the subset of rows where a single ping
+#' matched more than one event. Use this before calling `fd_add_events()` to
+#' understand why it errors.
+#'
+#' The function is intentionally free-standing and makes no assumptions about
+#' *why* the conflict arises — it simply surfaces whatever causes the bloat
+#' (overlapping real times, identical dummy windows, soft duplicates, etc.).
+#'
+#' @param ais A data frame of vessel tracking positions after
+#'   \code{\link{fd_add_trips}} has been applied. Must contain `.pid`, `.tid`,
+#'   and `time`.
+#' @param events A data frame of fishing events as returned by
+#'   \code{\link{fd_events}} (and optionally \code{\link{fd_flag_events}}).
+#'   Must contain `.tid`, `t1`, and `t2`.
+#'
+#' @return A tibble of the bloated join rows — i.e. only the pings that matched
+#'   more than one event, with all event columns attached. Each such ping appears
+#'   once per matched event. Returns an empty tibble (invisibly) with a message
+#'   when no conflicts exist.
+#'
+#' @examples
+#' \dontrun{
+#' ais2 <- fd_add_trips(ais, trips, cn = c("tid", "length", "kw", "gt", ".tid"))
+#'
+#' conflicts <- fd_check_events_join(ais2, events)
+#' conflicts |> dplyr::count(.tid, t1, t2, sort = TRUE)
+#' conflicts |> dplyr::distinct(.tid, t1, t2, .eid)
+#' }
+#'
+#' @seealso \code{\link{fd_add_events}}, \code{\link{fd_flag_events}}
+#' @export
+fd_check_events_join <- function(ais, events) {
+  joined <- ais |>
+    dplyr::left_join(
+      events,
+      by = dplyr::join_by(.tid, dplyr::between(time, t1, t2))
+    )
+
+  conflicts <- joined |>
+    dplyr::group_by(.pid) |>
+    dplyr::filter(dplyr::n() > 1) |>
+    dplyr::ungroup()
+
+  n_pings <- dplyr::n_distinct(conflicts$.pid)
+
+  if (n_pings == 0) {
+    message("No conflicts: every ping matches at most one event.")
+    return(invisible(conflicts))
+  }
+
+  message(
+    n_pings, " ping(s) matched more than one event across ",
+    dplyr::n_distinct(conflicts$.tid), " trip(s). ",
+    "fd_add_events() would fail.\n",
+    "Inspect the returned tibble to understand the overlapping windows."
+  )
+
+  conflicts
 }
