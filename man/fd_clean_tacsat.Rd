@@ -8,7 +8,7 @@ fd_clean_tacsat(tacsat, remove = TRUE)
 }
 \arguments{
 \item{tacsat}{A data frame in TACSAT format. See \code{fd_check_input()} /
-\code{dictionary} for the full list of required and optional fields.}
+\code{fd_dictionary} for the full list of required and optional fields.}
 
 \item{remove}{Logical. If \code{TRUE} (default), the raw date/time columns
 \code{SI_DATE} and \code{SI_TIME} are dropped once \code{SI_DATIM} has been constructed.

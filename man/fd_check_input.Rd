@@ -4,7 +4,7 @@
 \alias{fd_check_input}
 \title{Validate a TACSAT or EFLALO data frame against the field definitions}
 \usage{
-fd_check_input(data, which = c("tacsat", "eflalo"), dictionary = dictionary)
+fd_check_input(data, which = c("tacsat", "eflalo"), dictionary = fd_dictionary)
 }
 \arguments{
 \item{data}{A data frame in TACSAT or EFLALO format (raw, before cleaning).}
@@ -48,6 +48,6 @@ tacsat <- tacsat_raw |>
 
 }
 \seealso{
-\link{dictionary} for the underlying dictionary,
+\link{fd_dictionary} for the underlying dictionary,
 \code{\link[=fd_clean_tacsat]{fd_clean_tacsat()}} and \code{\link[=fd_clean_eflalo]{fd_clean_eflalo()}} which call this internally.
 }

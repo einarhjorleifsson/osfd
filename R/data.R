@@ -152,37 +152,6 @@
 "harbours"
 
 
-#' ICES statistical area polygons
-#'
-#' @description
-#' Polygons for ICES statistical areas in the North-East Atlantic (FAO Major
-#' Area 27), used for spatial filtering of VMS data to the area of interest.
-#' Derived from the `ICESareas` dataset in the
-#' `vmstools` package, with invalid geometries repaired via
-#' `sf::st_make_valid()`.
-#'
-#' @format An `sf` data frame with 66 rows and 11 variables:
-#' \describe{
-#'   \item{OBJECTID_1}{Internal object ID (numeric)}
-#'   \item{OBJECTID}{Internal object ID (numeric)}
-#'   \item{Major_FA}{FAO major fishing area — `"27"` throughout (character)}
-#'   \item{SubArea}{ICES sub-area (character)}
-#'   \item{Division}{ICES division (character)}
-#'   \item{SubDivisio}{ICES sub-division (character)}
-#'   \item{Unit}{ICES unit area (character; often `NA`)}
-#'   \item{Area_Full}{Full area code, e.g. `"27.4.b"` (character)}
-#'   \item{Area_27}{Area code without the leading `"27."`, e.g. `"4.b"` (character)}
-#'   \item{Area_km2}{Area in km² (numeric)}
-#'   \item{geometry}{Multi-polygon geometry, CRS: WGS 84 / EPSG:4326}
-#' }
-#'
-#' @source
-#' `vmstools` R package (`ICESareas`). Processed for `osfd` via
-#' `data-raw/DATASET_vmstools.R`.
-#'
-"ices_areas"
-
-
 #' Field definitions for TACSAT2 and EFLALO2
 #'
 #' @description
@@ -216,4 +185,4 @@
 #' documented from `fd_clean_tacsat()` and `fd_clean_eflalo()` source code.
 #' Built via `data-raw/DATASET_field_definitions.R`.
 #'
-"dictionary"
+"fd_dictionary"

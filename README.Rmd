@@ -72,6 +72,7 @@ tacsat       <- "https://heima.hafro.is/~einarhj/data/tacsat_IS.parquet" |>
 state_lookup <- "https://heima.hafro.is/~einarhj/data/gear_mapping.parquet" |> 
   arrow::read_parquet() |> 
   select(gear, target, s1, s2)
+benthis_lookup <- fd_benthis_lookup()
 ```
 
 ## Pre-processing
@@ -93,9 +94,10 @@ trips <- eflalo_clean |>
 
 events <- eflalo_clean |>
   fd_events() |> 
-  fd_flag_events(no_hands = TRUE,
-                 gear = icesVocab::getCodeList("GearType")$Key,
-                 met6 = icesVocab::getCodeList("Metier6_FishingActivity")$Key)
+  fd_flag_events(
+    no_hands = TRUE,
+    gear = icesVocab::getCodeList("GearType")$Key,
+    met6 = icesVocab::getCodeList("Metier6_FishingActivity")$Key)
 ```
 
 ## Processing
@@ -104,23 +106,22 @@ A little peek-a-boo, ... not run, only partially ready
 
 ```{r, eval = FALSE}
 ais2 <- ais |> 
-  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) 
-# trouble in add event paradise - for now a quick-fix 
-trouble <- 
-  fd_check_events_join(ais2, events) |> 
-  select(.eid:met6) |> 
-  distinct()
-ais3 <- ais2 |> 
-  fd_add_events(events |> filter(!.eid %in% trouble$.eid)) |> 
-  # here ais has to already have gear and target
+  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |> 
+  # some monkey-buissness - run fd_check_events_join(ais2, events) to see issues
+  fd_add_events(events, resolve = TRUE) |> 
+  # here the second intv call is made
+  group_by(.tid) |> 
+  mutate(dt_sec = fd_interval_seconds(time),
+         kwh <- kw * dt_sec / 60^2) |> 
+  ungroup() |> 
   fd_add_state(state_lookup) |> 
   filter(state == "fishing") |> 
-  # fd_add_catch(events) |>                # pending    
-  osfd:::fd_add_sf(eusm) |> 
+  # fd_add_catch(events) |>                # pending, resolve fd_add_events first
+  fd_add_sf(eusm) |> 
   fd_add_sf(depth) |> 
   mutate(csq = fd_calc_csq(lon, lat)) #|>
-  # fd_add_gearwith(gear_width_table) |>   # pending
-  # fd_calc_sa()                           # pending
+# fd_add_gearwith(gear_width_table) |>   # pending
+# fd_calc_sa()                           # pending
 ```
 
 ## Submission

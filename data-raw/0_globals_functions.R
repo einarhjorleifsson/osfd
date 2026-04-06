@@ -1395,7 +1395,7 @@ add_gearwidth <- function(x, met_name = "LE_MET", oal_name = "VE_LEN", kw_name =
   #Updated metiers
   metier_lookup <- fread("https://raw.githubusercontent.com/ices-eg/RCGs/master/Metiers/Reference_lists/RDB_ISSG_Metier_list.csv")
 
-  gear_widths <- get_benthis_parameters()
+  gear_widths <- icesVMS::get_benthis_parameters()
 
   aux_lookup <- data.table(merge(gear_widths, metier_lookup, by.x = "benthisMet", by.y = "Benthis_metiers", all.y = T))
   aux_lookup <- aux_lookup[,.(Metier_level6, benthisMet, avKw, avLoa, avFspeed, subsurfaceProp, gearWidth, firstFactor, secondFactor, gearModel,
@@ -1409,7 +1409,7 @@ add_gearwidth <- function(x, met_name = "LE_MET", oal_name = "VE_LEN", kw_name =
   vms$gearWidth_model <- NA
   valid_gear_models <- !is.na(vms$gearModel) & !is.na(vms$gearCoefficient)
   vms$gearWidth_model[valid_gear_models] <-
-    predict_gear_width(vms$gearModel[valid_gear_models], vms$gearCoefficient[valid_gear_models], vms[valid_gear_models, ])
+    sfdSAR::predict_gear_width(vms$gearModel[valid_gear_models], vms$gearCoefficient[valid_gear_models], vms[valid_gear_models, ])
 
   if("LE_GEARWIDTH" %!in% names(vms))
     vms[, LE_GEARWIDTH := NA]

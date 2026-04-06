@@ -15,12 +15,13 @@ utils::globalVariables(c(
   ".checks", ".overlap",
   ".tid", ".eid", ".echecks", ".tchecks", ".tid",
   ".t1_str", ".t2_str", "LE_STIME",
-  "derived", "dictionary", "field", "required", "type",
+  "derived", "field", "required", "type",
   ".sid", "T1", "T2", "cid", "cid1", "cid2", "eid", "flt", "gt", "hid1", "hid2",
   "kw", "old", "tid", "time", "vid",
   "LE_ETIME", "lid",
   ".prev_max_t2", "t1", "t2",
-  "dictionary", "lat", "lon", "events",
-  "s1", "s2", ".pid"
+  "lat", "lon", "events",
+  "s1", "s2", ".pid", ".tsrc",
+  "fd_dictionary"
   ))
 

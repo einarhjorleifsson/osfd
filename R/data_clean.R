@@ -26,7 +26,7 @@
 #'
 #' @return `data`, invisibly.
 #'
-#' @seealso [dictionary] for the underlying dictionary,
+#' @seealso [fd_dictionary] for the underlying dictionary,
 #'   [fd_clean_tacsat()] and [fd_clean_eflalo()] which call this internally.
 #'
 #' @examples
@@ -41,11 +41,11 @@
 #' }
 #'
 #' @export
-fd_check_input <- function(data, which = c("tacsat", "eflalo"), dictionary = dictionary) {
+fd_check_input <- function(data, which = c("tacsat", "eflalo"), dictionary = fd_dictionary) {
   which <- match.arg(which)
 
   # Non-derived, non-pattern rows for this table
-  defs <- osfd::dictionary |>
+  defs <- dictionary |>
     dplyr::filter(table == which, !derived, !grepl("<", old))
 
   # 1. Required fields -> hard stop
@@ -117,7 +117,7 @@ fd_check_input <- function(data, which = c("tacsat", "eflalo"), dictionary = dic
 #' `dplyr::row_number()` are not compatible with lazy/DuckDB backends.
 #'
 #' @param tacsat A data frame in TACSAT format. See `fd_check_input()` /
-#'   `dictionary` for the full list of required and optional fields.
+#'   `fd_dictionary` for the full list of required and optional fields.
 #' @param remove Logical. If `TRUE` (default), the raw date/time columns
 #'   `SI_DATE` and `SI_TIME` are dropped once `SI_DATIM` has been constructed.
 #'   Set to `FALSE` to retain the originals.
@@ -162,7 +162,7 @@ fd_clean_tacsat <- function(tacsat, remove = TRUE) {
 
   if (remove) tacsat <- tacsat |> dplyr::select(-c(SI_DATE, SI_TIME))
 
-  tacsat <- fd_translate(tacsat, dictionary |> dplyr::filter(table == "tacsat"))
+  tacsat <- fd_translate(tacsat, fd_dictionary |> dplyr::filter(table == "tacsat"))
   return(tacsat)
 }
 
@@ -309,7 +309,7 @@ fd_clean_eflalo <- function(eflalo, remove = TRUE) {
 
   if (remove) eflalo <- dplyr::select(eflalo, -c(LE_STIME, LE_ETIME))
 
-  dict_ef <- dictionary |> dplyr::filter(table == "eflalo")
+  dict_ef <- fd_dictionary |> dplyr::filter(table == "eflalo")
   eflalo <- fd_translate(eflalo, dict_ef)
   return(eflalo)
 }
@@ -342,7 +342,7 @@ fd_clean_eflalo <- function(eflalo, remove = TRUE) {
 #'
 #' @export
 fd_revert_tacsat <- function(tacsat) {
-  dict <- dictionary |> dplyr::filter(table == "tacsat")
+  dict <- fd_dictionary |> dplyr::filter(table == "tacsat")
   out <- fd_translate(tacsat, dict, from = "new", to = "old")
 
   if ("SI_DATIM" %in% names(out)) {
@@ -385,7 +385,7 @@ fd_revert_tacsat <- function(tacsat) {
 #'
 #' @export
 fd_revert_eflalo <- function(eflalo) {
-  dict <- dictionary |> dplyr::filter(table == "eflalo")
+  dict <- fd_dictionary |> dplyr::filter(table == "eflalo")
   out <- fd_translate(eflalo, dict, from = "new", to = "old")
 
   if ("FT_DDATIM" %in% names(out)) {

@@ -14,7 +14,7 @@
 ##   derived     TRUE = added/transformed by fd_clean_*; FALSE = present in raw file
 ##.  new         Alternative variable name
 
-dictionary <- tibble::tribble(
+fd_dictionary <- tibble::tribble(
 
   # ── TACSAT raw fields ────────────────────────────────────────────────────────
   ~old,       ~table,    ~type,   ~format,          ~description,                          ~required, ~derived, ~new,
@@ -78,4 +78,4 @@ dictionary <- tibble::tribble(
 
 )
 
-usethis::use_data(dictionary, overwrite = TRUE)
+usethis::use_data(fd_dictionary, overwrite = TRUE)

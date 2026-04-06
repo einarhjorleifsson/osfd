@@ -50,8 +50,7 @@
 #'   `lon` (`SI_LONG`), `lat` (`SI_LATI`), and `speed` (`SI_SP`).
 #' @param minimum_interval_seconds Numeric. Minimum permitted time interval
 #'   between consecutive pings for the same vessel, in **seconds**. Default: 30.
-#' @param areas A spatial object (sf) containing the area of interest. If `NULL`
-#'   (default), the function uses `osfd::ices_areas`. Records outside this area
+#' @param areas A spatial object (sf) containing the area of interest. Records outside this area
 #'   fail the check.
 #' @param ports A spatial object (sf) containing port locations. If not
 #'   already an sf object, it should have `lon` and `lat` columns. Ports are
@@ -92,9 +91,12 @@
 #' @export
 fd_flag_tacsat <- function(tacsat,
                            minimum_interval_seconds = 30,
-                           areas = ices_areas,
-                           ports = harbours,
+                           areas,
+                           ports,
                            no_hands = TRUE) {
+
+  if(missing(ports)) stop("Need ports")
+  if(missing(areas)) stop("Need areas")
 
   if (!inherits(ports, "sf")) {
     ports <-

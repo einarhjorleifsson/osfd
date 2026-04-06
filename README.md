@@ -61,6 +61,7 @@ tacsat       <- "https://heima.hafro.is/~einarhj/data/tacsat_IS.parquet" |>
 state_lookup <- "https://heima.hafro.is/~einarhj/data/gear_mapping.parquet" |> 
   arrow::read_parquet() |> 
   select(gear, target, s1, s2)
+benthis_lookup <- fd_benthis_lookup()
 ```
 
 ## Pre-processing
@@ -83,9 +84,10 @@ trips <- eflalo_clean |>
 
 events <- eflalo_clean |>
   fd_events() |> 
-  fd_flag_events(no_hands = TRUE,
-                 gear = icesVocab::getCodeList("GearType")$Key,
-                 met6 = icesVocab::getCodeList("Metier6_FishingActivity")$Key)
+  fd_flag_events(
+    no_hands = TRUE,
+    gear = icesVocab::getCodeList("GearType")$Key,
+    met6 = icesVocab::getCodeList("Metier6_FishingActivity")$Key)
 ```
 
 ## Processing
@@ -94,23 +96,22 @@ A little peek-a-boo, … not run, only partially ready
 
 ``` r
 ais2 <- ais |> 
-  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) 
-# trouble in add event paradise - for now a quick-fix 
-trouble <- 
-  fd_check_events_join(ais2, events) |> 
-  select(.eid:met6) |> 
-  distinct()
-ais3 <- ais2 |> 
-  fd_add_events(events |> filter(!.eid %in% trouble$.eid)) |> 
-  # here ais has to already have gear and target
+  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |> 
+  # some monkey-buissness - run fd_check_events_join(ais2, events) to see issues
+  fd_add_events(events, resolve = TRUE) |> 
+  # here the second intv call is made
+  group_by(.tid) |> 
+  mutate(dt_sec = fd_interval_seconds(time),
+         kwh <- kw * dt_sec / 60^2) |> 
+  ungroup() |> 
   fd_add_state(state_lookup) |> 
   filter(state == "fishing") |> 
-  # fd_add_catch(events) |>                # pending    
-  osfd:::fd_add_sf(eusm) |> 
+  # fd_add_catch(events) |>                # pending, resolve fd_add_events first
+  fd_add_sf(eusm) |> 
   fd_add_sf(depth) |> 
   mutate(csq = fd_calc_csq(lon, lat)) #|>
-  # fd_add_gearwith(gear_width_table) |>   # pending
-  # fd_calc_sa()                           # pending
+# fd_add_gearwith(gear_width_table) |>   # pending
+# fd_calc_sa()                           # pending
 ```
 
 ## Submission
@@ -180,18 +181,23 @@ devtools::session_info()
 #> ─ Packages ───────────────────────────────────────────────────────────────────
 #>  package        * version    date (UTC) lib source
 #>  arrow          * 23.0.1.1   2026-02-24 [2] CRAN (R 4.5.2)
+#>  askpass          1.2.1      2024-10-04 [2] CRAN (R 4.5.0)
 #>  assertthat       0.2.1      2019-03-21 [2] CRAN (R 4.5.0)
 #>  backports        1.5.0      2024-05-23 [2] CRAN (R 4.5.0)
+#>  base64enc        0.1-6      2026-02-02 [2] CRAN (R 4.5.2)
 #>  bit              4.6.0      2025-03-06 [2] CRAN (R 4.5.0)
 #>  bit64            4.6.0-1    2025-01-16 [2] CRAN (R 4.5.0)
+#>  blob             1.3.0      2026-01-14 [2] CRAN (R 4.5.2)
 #>  boot             1.3-32     2025-08-29 [2] CRAN (R 4.5.2)
 #>  broom            1.0.12     2026-01-27 [2] CRAN (R 4.5.2)
 #>  cachem           1.1.0      2024-05-16 [2] CRAN (R 4.5.0)
+#>  chron            2.3-62     2024-12-31 [2] CRAN (R 4.5.0)
 #>  class            7.3-23     2025-01-01 [2] CRAN (R 4.5.2)
 #>  classInt         0.4-11     2025-01-08 [1] CRAN (R 4.5.0)
 #>  cli              3.6.5      2025-04-23 [1] CRAN (R 4.5.0)
 #>  colorspace       2.1-2      2025-09-22 [2] CRAN (R 4.5.0)
 #>  cowplot          1.2.0      2025-07-07 [2] CRAN (R 4.5.0)
+#>  curl             7.0.0      2025-08-19 [2] CRAN (R 4.5.0)
 #>  data.table       1.18.2.1   2026-01-27 [2] CRAN (R 4.5.2)
 #>  DBI              1.3.0      2026-02-25 [1] CRAN (R 4.5.2)
 #>  Deriv            4.2.0      2025-06-20 [2] CRAN (R 4.5.0)
@@ -211,11 +217,17 @@ devtools::session_info()
 #>  generics         0.1.4      2025-05-09 [1] CRAN (R 4.5.0)
 #>  ggplot2        * 4.0.2      2026-02-03 [2] CRAN (R 4.5.2)
 #>  glue             1.8.0      2024-09-30 [1] CRAN (R 4.5.0)
+#>  gsubfn           0.7        2018-03-16 [2] CRAN (R 4.5.0)
 #>  gtable           0.3.6      2024-10-25 [2] CRAN (R 4.5.0)
 #>  hms              1.1.4      2025-10-17 [2] CRAN (R 4.5.0)
 #>  htmltools        0.5.9      2025-12-04 [2] CRAN (R 4.5.2)
 #>  htmlwidgets      1.6.4      2023-12-06 [2] CRAN (R 4.5.0)
 #>  httr             1.4.8      2026-02-13 [2] CRAN (R 4.5.2)
+#>  icesConnect      1.1.4      2025-04-30 [2] CRAN (R 4.5.0)
+#>  icesDatsu        1.2.1      2025-05-02 [2] https://ices-tools-prod.r-universe.dev (R 4.5.2)
+#>  icesDatsuQC      1.2.0      2024-10-26 [2] https://ices-tools-prod.r-universe.dev (R 4.5.3)
+#>  icesVMS          1.1.6      2026-03-27 [2] Github (ices-tools-prod/icesVMS@fae2845)
+#>  icesVocab        1.3.2      2025-05-26 [2] CRAN (R 4.5.0)
 #>  jsonlite         2.0.0      2025-03-27 [2] CRAN (R 4.5.0)
 #>  kernlab          0.9-33     2024-08-13 [2] CRAN (R 4.5.0)
 #>  KernSmooth       2.23-26    2025-01-01 [2] CRAN (R 4.5.2)
@@ -239,6 +251,7 @@ devtools::session_info()
 #>  pkgconfig        2.0.3      2019-09-22 [1] CRAN (R 4.5.0)
 #>  pkgload          1.5.0      2026-02-03 [2] CRAN (R 4.5.2)
 #>  plotly           4.12.0     2026-01-24 [2] CRAN (R 4.5.2)
+#>  proto            1.0.0      2016-10-29 [2] CRAN (R 4.5.0)
 #>  proxy            0.4-29     2025-12-29 [1] CRAN (R 4.5.2)
 #>  purrr          * 1.2.1      2026-01-09 [1] CRAN (R 4.5.2)
 #>  R6               2.6.1      2025-02-15 [1] CRAN (R 4.5.0)
@@ -247,6 +260,7 @@ devtools::session_info()
 #>  readr          * 2.2.0      2026-02-19 [2] CRAN (R 4.5.2)
 #>  rlang            1.1.7      2026-01-09 [1] CRAN (R 4.5.2)
 #>  rmarkdown        2.30       2025-09-28 [2] CRAN (R 4.5.0)
+#>  RSQLite          2.4.6      2026-02-06 [2] CRAN (R 4.5.2)
 #>  rstudioapi       0.18.0     2026-01-16 [2] CRAN (R 4.5.2)
 #>  s2               1.1.9      2025-05-23 [1] CRAN (R 4.5.0)
 #>  S7               0.2.1      2025-11-14 [2] CRAN (R 4.5.2)
@@ -254,6 +268,7 @@ devtools::session_info()
 #>  segmented        2.2-1      2026-01-29 [2] CRAN (R 4.5.2)
 #>  sessioninfo      1.2.3      2025-02-05 [2] CRAN (R 4.5.0)
 #>  sf             * 1.1-0      2026-02-24 [1] CRAN (R 4.5.2)
+#>  sqldf            0.4-12     2026-01-30 [2] CRAN (R 4.5.2)
 #>  stringi          1.8.7      2025-03-27 [1] CRAN (R 4.5.0)
 #>  stringr        * 1.6.0      2025-11-04 [1] CRAN (R 4.5.0)
 #>  survival         3.8-6      2026-01-16 [2] CRAN (R 4.5.2)
@@ -276,7 +291,7 @@ devtools::session_info()
 #>  yaml             2.3.12     2025-12-10 [2] CRAN (R 4.5.2)
 #>  zoo              1.8-15     2025-12-15 [2] CRAN (R 4.5.2)
 #> 
-#>  [1] /private/var/folders/14/1_h9q5hn2h93byhrkzp8jfj00000gp/T/Rtmpy5rJaJ/temp_libpath175c965cf4144
+#>  [1] /private/var/folders/14/1_h9q5hn2h93byhrkzp8jfj00000gp/T/Rtmpl0Lpv2/temp_libpath58cb144c8d20
 #>  [2] /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/library
 #>  * ── Packages attached to the search path.
 #> 

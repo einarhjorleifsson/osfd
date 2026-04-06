@@ -83,9 +83,11 @@ Columns added temporarily inside a function and dropped before returning (e.g. `
 | `R/data_clean.R` | `fd_check_input()`, `fd_clean_tacsat()`, `fd_clean_eflalo()`, `fd_revert_tacsat()`, `fd_revert_eflalo()` | Pre-processing & name revert; R-only (not duckdb-compatible) |
 | `R/data_flag.R` | `fd_flag_tacsat()`, `fd_flag_trips()`, `fd_flag_events()`, `fd_flag_eflalo()` | QC / labelling; R-only (not duckdb-compatible) |
 | `R/tidy_eflalo.R` | `fd_trips()`, `fd_events()`, `fd_tidy_eflalo()` | Extraction / decomposition helpers |
-| `R/trail_steps.R` | `fd_step_time()` | Ping interval calculation |
+| `R/trail_steps.R` | `fd_step_time()`, `fd_interval_seconds()` | Ping interval calculation |
 | `R/add_to_pings.R` | `fd_add_trips()`, `fd_add_events()`, `fd_check_events_join()` | Ping enrichment: trip and event joins |
-| `R/geo.R` | `d2ir()`, `fd_calc_csq()`, `csq2lonlat()` | Coordinate/spatial utilities; `d2ir()` and `fd_calc_csq()` are dbplyr-compatible |
+| `R/gear.R` | `fd_benthis_lookup()`, `fd_add_gearwidth()`, `fd_add_sa()` | Gear width prediction and swept area |
+| `R/geo.R` | `d2ir()`, `fd_calc_csq()`, `csq2lonlat()`, `fd_add_sf()` | Coordinate/spatial utilities; `d2ir()` and `fd_calc_csq()` are dbplyr-compatible; `fd_add_sf()` is R-only |
+| `R/state.R` | `fd_add_state()` | Ping state classification (fishing vs. steaming) — stub |
 | `R/utils.R` | `fd_translate()` | Column name translation utility |
 | `R/data.R` | Dataset documentation | |
 | `R/globals.R` | Global variable declarations | |
@@ -189,7 +191,7 @@ All four functions share a `no_hands` parameter:
 - When `no_hands = FALSE`: adds `.checks` and `.intv`; checks 00–08 plus `"ok"`:
   - `"00 missing coordinates"`: `lon`/`lat` is `NA` — split out before spatial ops, rejoined with this label
   - 01–08: area, duplicate, interval, harbour, missing country ID/vessel ID/datetime/speed checks
-- When `no_hands = TRUE`: returns only passing rows with `.intv` appended; `.checks` is dropped
+- When `no_hands = TRUE`: returns only passing rows; both `.checks` and `.intv` are dropped
 
 ### `fd_flag_trips(trips, no_hands = TRUE)`
 - Input: trips data frame from `fd_trips()` — uses new column names (`cid`, `vid`, `T1`, `T2`, `length`, `kw`)
@@ -262,9 +264,74 @@ Decodes a c-square code to the **centre coordinates** of the cell at the request
 - Returns exact cell centres; the vmstools `CSquare2LonLat()` it replaces returns centres offset by ~1e-5° due to an Excel-rounding hack (`ra = 1e-6`)
 - Input codes must be at the requested `degrees` resolution or finer
 
-## `fd_step_time()` (`R/trail_steps.R`)
+### `fd_add_sf(ais, shape)`
+Spatially joins an `sf` polygon layer onto AIS/VMS pings. Converts `ais` to an `sf` point object (using `lon` / `lat`, CRS 4326) if not already `sf`, then applies `sf::st_join()`. S2 geometry is disabled for the duration of the call and restored on exit.
+- `shape` must be an `sf` object (stops with an error otherwise)
+- Row-count guard: stops if the join inflates the row count (i.e. `shape` contains overlapping polygons producing a one-to-many match)
+- **Returns** an `sf` object with the same row count as `ais`, augmented with columns from `shape`
+- ⚠️ Error message on row-count failure is currently a placeholder (`"Screeeeeam"`); needs improvement
+- **R-only**
 
-Computes time interval (seconds) between consecutive pings as a weighted blend of backward and forward differences. Used internally by `fd_flag_tacsat()`. Call within `group_by(vid)` + `mutate()` (vessel grouping column is now `vid` after `fd_clean_tacsat()`).
+## `fd_step_time()` and `fd_interval_seconds()` (`R/trail_steps.R`)
+
+### `fd_step_time(datetime, weight = c(1, 0), fill_na = TRUE)`
+Computes time interval (seconds) between consecutive pings as a weighted blend of backward and forward differences. Used internally by `fd_flag_tacsat()` and `fd_interval_seconds()`. Call within `group_by(vid)` + `mutate()` (vessel grouping column is now `vid` after `fd_clean_tacsat()`).
+
+### `fd_interval_seconds(time, probs = 0.975)`
+Computes ping intervals via `fd_step_time()`, then caps any value exceeding the `probs` quantile of the computed intervals. Intended to be called within `group_by(.tid)` + `mutate()` during the processing stage to produce the `.intv` column used by `fd_add_sa()`.
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `time` | — | POSIXct datetime vector, sorted chronologically within groups |
+| `probs` | `0.975` | Quantile used as the upper cap (scalar in `[0, 1]`) |
+
+## `R/gear.R` — Gear width and swept area
+
+All three functions carry `@source` attribution to the ICES VMS and Logbook Data Call workflow (https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call). Requires `sfdSAR` and `icesVMS` (optional dependencies).
+
+### `fd_benthis_lookup(kw_name = "kw", oal_name = "length")`
+Fetches the RCG métier reference list from GitHub (`ices-eg/RCGs`) and joins it with BENTHIS gear-width parameters from `icesVMS::get_benthis_parameters()`. The `gearCoefficient` sentinel values (`"avg_kw"`, `"avg_oal"`) are replaced with the actual column names (`kw_name`, `oal_name`) so that `sfdSAR::predict_gear_width()` can address them directly.
+
+- **Returns**: data frame keyed on `Metier_level6` with columns: `benthisMet`, `avKw`, `avLoa`, `avFspeed`, `subsurfaceProp`, `gearWidth`, `firstFactor`, `secondFactor`, `gearModel`, `gearCoefficient`, `contactModel`.
+- ⚠️ Requires internet access at runtime.
+
+### `fd_add_gearwidth(x, met_name = "met6", oal_name = "length", kw_name = "kw")`
+Predicts gear contact width (km) for each VMS ping using the BENTHIS model via `sfdSAR::predict_gear_width()` and appends `.gearwidth`. Fill priority:
+
+1. User-supplied `LE_GEARWIDTH` column (if present and not `NA`)
+2. Model prediction (metres → km)
+3. BENTHIS lookup-table default (`gearWidth`)
+
+- **Returns**: `x` with one additional column `.gearwidth` (numeric, km); `NA` where unavailable.
+- Calls `fd_benthis_lookup()` internally; requires internet access at runtime.
+
+### `fd_add_sa(x, gear_name = "gear", intv_name = ".intv", gearwidth_name = ".gearwidth", speed_name = "speed")`
+Calculates swept area (km²) per VMS ping via `sfdSAR::predict_surface_contact()`. Dispatch by gear type:
+
+| Gear | Model | Notes |
+|---|---|---|
+| `SDN` | `danish_seine_contact()` | Rope-loop geometry |
+| `SSC` | `scottish_seine_contact()` | Rope-loop geometry with splitting-phase multiplier |
+| All others | `trawl_contact()` | `SA = gear_width × fishing_hours × fishing_speed × 1.852` |
+
+- `intv_name` column is expected in **seconds**; the function divides by 3600 internally.
+- An intermediate `.model` column is created during dispatch and dropped before returning.
+- **Returns**: `x` with one additional column `.sa` (numeric, km²); `NA` where gear width or speed unavailable.
+- Typical usage: chain after `fd_add_gearwidth()` in a pipeline.
+
+---
+
+## `R/state.R` — Ping state classification
+
+### `fd_add_state(ais, speed_table)` ⚠️ stub
+Classifies each VMS ping as `"fishing"` or `"something else"` based on whether its speed falls within the gear-specific thresholds in `speed_table`.
+
+- `speed_table`: a data frame with columns `gear`, `target`, `s1` (lower speed threshold, knots), `s2` (upper speed threshold, knots)
+- Joins `speed_table` to `ais` (by `gear`/`target`; join key not yet explicitly enforced), evaluates `dplyr::between(speed, s1, s2)`, drops `s1`/`s2` before returning
+- **Returns**: `ais` with a `state` character column appended
+- ⚠️ The function is a working stub: the join key, the fallback label (`"something else"`), and parameter documentation are all provisional
+
+---
 
 ## `R/add_to_pings.R` — Ping enrichment
 
@@ -327,7 +394,7 @@ Contains three functions. `fd_flag_trips()` and `fd_flag_events()` live in `R/da
 
 ## Typical Pipeline
 
-The pipeline has three stages: **pre-processing**, **processing**, and **submission**. Processing and submission functions are not yet implemented; the pre-processing stage is complete.
+The pipeline has three stages: **pre-processing**, **processing**, and **submission**. Pre-processing is complete. Processing functions are partially implemented (`fd_add_state()` is a working stub; `fd_add_sf()` is implemented). Submission functions are not yet implemented.
 
 The eflalo data is split into `trips` and `events` early and kept separate throughout. The cleaned VMS data is conventionally named `ais`.
 
@@ -379,9 +446,14 @@ events <- filter(events, .echecks == "ok") |> select(-.echecks)
 ais2 <- ais |>
   fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |>
   fd_add_events(events) |>
-  fd_add_state(state_lookup) |>   # pending — classifies pings as fishing/steaming
+  fd_add_state(state_lookup) |>   # stub — classifies pings as fishing/steaming
   filter(state == "fishing") |>
-  fd_add_sf(eusm) |>              # pending — spatial join to habitat layer
+  group_by(.tid) |>
+  mutate(.intv = fd_interval_seconds(time)) |>
+  ungroup() |>
+  fd_add_gearwidth() |>
+  fd_add_sa() |>
+  fd_add_sf(eusm) |>              # spatial join to habitat layer
   mutate(csq = fd_calc_csq(lon, lat))
 
 # ── Submission (pending) ──────────────────────────────────────────────────────
@@ -416,13 +488,19 @@ No test files exist yet. The `tests/testthat/` directory is empty.
 ## Outstanding Work
 
 - [ ] Implement catch distribution (`fd_split_among_pings()`) — see `_articles/catch-distribution.Rmd` for design notes
-- [ ] Post-distribution helpers: catch-per-unit-effort, swept area, ecosystem indicators
+- [ ] Post-distribution helpers: catch-per-unit-effort, ecosystem indicators (swept area implemented: `fd_add_gearwidth()` + `fd_add_sa()`)
+- [ ] **`fd_add_state()` needs hardening**: finalise join key (currently relies on implicit `by`), replace placeholder label `"something else"`, add proper Roxygen documentation
+- [ ] **`fd_add_sf()` error message**: replace `stop("Screeeeeam")` with an informative message explaining the row-count inflation and suggesting `largest = TRUE` or polygon pre-dissolution
 - [ ] Write tests (`tests/testthat/`) — priority cases: `fd_flag_trips()` overlap detection, `fd_flag_events()` cascading overlap with real times and dummy-time skip, `fd_flag_eflalo()` end-to-end label propagation
 - [ ] **Multiple events per day (soft duplicates)**: when `.tsrc = "dummy"`, downstream code assumes one event per `.tid × gear × date × ir`. If multiple rows share that key with different catch values (or even identical values but different `lid`s), all share the same dummy `t1`/`t2` window, causing `fd_add_events()` to error. `fd_check_events_join()` will surface the conflict. Resolution path: detect in `fd_flag_events()` using a `.tid × gear × date × ir` duplicate check and resolve by taking the row with the highest `LE_KG_TOT` (or by aggregating catches) and warning the user. The current check 01 only catches `lid × date` duplicates (exact repeats of the stated event ID) — it does not catch this softer violation.
 - [ ] **Exact duplicate rows and `fd_events()`**: `fd_events()` errors on exact duplicate rows (all selected columns identical), so the `"01 duplicate event id and catch date"` check in `fd_flag_events` cannot trigger through `fd_flag_eflalo`. If upstream data may have exact duplicates, call `dplyr::distinct(eflalo)` before `fd_flag_eflalo()`, or use `fd_flag_events()` directly.
 
 ### Completed
 
+- [x] `fd_add_sf()` added to `R/geo.R`: spatially joins an sf polygon layer onto pings, with S2-toggle and row-count guard.
+- [x] `fd_add_state()` stub added to `R/state.R`: joins speed thresholds and classifies pings as `"fishing"` / `"something else"`.
+- [x] `fd_interval_seconds()` added to `R/trail_steps.R`: wraps `fd_step_time()` and caps values at the `probs` quantile. Fixed typo `max_seonds` → `max_seconds` in earlier draft.
+- [x] `R/gear.R` created with three new functions: `fd_benthis_lookup()`, `fd_add_gearwidth()`, `fd_add_sa()`. Adapted from the ICES VMS and Logbook Data Call workflow; `data.table` replaced with `dplyr` throughout.
 - [x] `fd_clean_tacsat()` and `fd_clean_eflalo()`: column names translated from ICES ALLCAPS to short lowercase via `fd_translate()`. All internal references in `data_flag.R` and `tidy_eflalo.R` updated accordingly.
 - [x] `fd_revert_tacsat()` and `fd_revert_eflalo()` implemented; reconstruct split date/time columns (`SI_DATE`/`SI_TIME`, `FT_DDAT`/`FT_DTIME`, `FT_LDAT`/`FT_LTIME`) from their POSIXct counterparts via `format()`
 - [x] `fd_flag_trips()` and `fd_flag_events()` moved from `tidy_eflalo.R` to `data_flag.R` — all check functions now co-located

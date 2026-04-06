@@ -190,4 +190,122 @@ Returns exact cell centres (no Excel-era rounding offset). R-only.
 
 **`fd_step_time(datetime, weight, fill_na)`** (`R/trail_steps.R`) — computes
 ping-to-ping time intervals as a weighted blend of backward and forward
-differences. Used internally by `fd_flag_tacsat()`.
+differences. Used internally by `fd_flag_tacsat()` and `fd_interval_seconds()`.
+
+**`fd_interval_seconds(time, probs = 0.975)`** (`R/trail_steps.R`) — wraps
+`fd_step_time()` and caps the resulting intervals at the `probs` quantile (default 97.5th percentile). Intended for use within `group_by(.tid) |> mutate()` to produce the `.intv` column used by `fd_add_sa()`.
+
+---
+
+## Gear width and swept area (`R/gear.R`)
+
+Three new functions for the processing stage. All adapted from the ICES VMS and
+Logbook Data Call workflow
+(<https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call>); `data.table`
+replaced with `dplyr` throughout. Requires optional dependencies `sfdSAR` and
+`icesVMS`.
+
+**`fd_benthis_lookup(kw_name = "kw", oal_name = "length")`** — builds a lookup
+table by fetching the RCG métier reference list from GitHub and joining it with
+BENTHIS gear-width parameters from `icesVMS::get_benthis_parameters()`. The
+`gearCoefficient` sentinel values (`"avg_kw"`, `"avg_oal"`) are replaced with
+the actual column names supplied via `kw_name` and `oal_name`. Requires internet
+access at runtime.
+
+**`fd_add_gearwidth(x, met_name = "met6", oal_name = "length", kw_name = "kw")`**
+— predicts gear contact width (km) for each VMS ping using the BENTHIS model
+via `sfdSAR::predict_gear_width()` and appends `.gearwidth`. Fill priority:
+user-supplied `LE_GEARWIDTH` → model prediction (m → km) → BENTHIS table
+default. Returns `x` with `.gearwidth` appended.
+
+**`fd_add_sa(x, gear_name = "gear", intv_name = ".intv", gearwidth_name = ".gearwidth", speed_name = "speed")`**
+— calculates swept area (km²) per VMS ping via
+`sfdSAR::predict_surface_contact()`. Dispatches by gear type: `SDN` (Danish
+seine) → `danish_seine_contact()`; `SSC` (Scottish seine) →
+`scottish_seine_contact()`; all other gears → `trawl_contact()`. The interval
+column is expected in seconds; the function converts to hours internally.
+Returns `x` with `.sa` appended.
+
+---
+
+## QC / Flagging updates (`R/data_flag.R`)
+
+All four `fd_flag_*` functions now share a `no_hands` parameter:
+
+- `no_hands = TRUE` (default, production): failing records are filtered out and
+  the check column is dropped before returning.
+- `no_hands = FALSE` (diagnostic): all records are returned with the check
+  column appended for interactive inspection.
+
+**`fd_flag_tacsat()`**
+
+- Parameters renamed: `area` → `areas`, `harbours` → `ports`.
+- Added `no_hands` parameter. When `TRUE`, both `.checks` and `.intv` are
+  dropped; when `FALSE`, both are appended.
+- NA-coordinate rows are re-sorted by `.pid` after rejoining.
+
+**`fd_flag_trips()`**
+
+- Added `no_hands` parameter.
+- New check `"03 new years trip"`: flags trips where the departure year is
+  exactly one less than the landing year.
+- Existing checks renumbered: 03–08 → 04–09.
+
+**`fd_flag_events()`**
+
+- Added `no_hands` parameter; argument order is now `(events, no_hands = TRUE,
+  gear = NULL, met6 = NULL)`.
+- Temporal checks 04–08 are now skipped when `.tsrc == "dummy"` — synthetic
+  `00:01`/`23:59` placeholder times carry no real temporal information. A
+  `has_times` guard also handles the case where `t1`/`t2`/`.tsrc` are absent.
+
+**`fd_flag_eflalo()`** — complete rewrite as an orchestrating wrapper
+
+- Removed the `year` parameter (was never implemented).
+- Added `no_hands` parameter.
+- Delegates trip-level checks to `fd_flag_trips(no_hands = FALSE)` (joined via
+  `.tid`) and event-level checks to `fd_flag_events(no_hands = FALSE)` (joined
+  via `.eid`).
+- Composes a single `.checks` column in priority order: trip failure → event
+  failure → `"catch date before departure"` → `"catch date after arrival"` →
+  `"ok"`.
+
+---
+
+## Ping enrichment updates (`R/add_to_pings.R`)
+
+**`fd_add_events(ais, events)`** — fully implemented and documented
+
+- Joins pings to events by `.tid` + `between(time, t1, t2)`.
+- Row-count guard stops with an informative error if any ping matches more than
+  one event, directing the user to `fd_check_events_join()`.
+
+**`fd_check_events_join(ais, events)`** — new diagnostic function
+
+- Performs the same join as `fd_add_events()` without a relationship constraint
+  and returns only the rows where a ping matched more than one event.
+- Prints a summary: number of affected pings and trips.
+- Returns an empty tibble invisibly (with a message) when no conflicts exist.
+
+---
+
+## Spatial join (`R/geo.R`)
+
+**`fd_add_sf(ais, shape)`** — new function
+
+- Spatially left-joins an `sf` polygon layer (`shape`) onto VMS/AIS pings via
+  `sf::st_join()`. Converts `ais` to an `sf` point object (CRS 4326) if not
+  already `sf`.
+- S2 geometry is disabled for the duration of the call and restored on exit.
+- Row-count guard stops if overlapping polygons produce a one-to-many join.
+
+---
+
+## Ping state classification (`R/state.R`)
+
+**`fd_add_state(ais, speed_table)`** — new stub function
+
+- Joins `speed_table` (columns `gear`, `target`, `s1`, `s2` in knots) to `ais`
+  and classifies each ping as `"fishing"` (speed within `[s1, s2]`) or
+  `"something else"`. Drops `s1`/`s2` before returning.
+- ⚠️ Working stub: join key, fallback label, and documentation are provisional.

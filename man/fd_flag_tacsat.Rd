@@ -7,8 +7,8 @@
 fd_flag_tacsat(
   tacsat,
   minimum_interval_seconds = 30,
-  areas = ices_areas,
-  ports = harbours,
+  areas,
+  ports,
   no_hands = TRUE
 )
 }
@@ -20,8 +20,7 @@ contain \code{cid} (\code{VE_COU}), \code{vid} (\code{VE_REF}), \code{time} (\co
 \item{minimum_interval_seconds}{Numeric. Minimum permitted time interval
 between consecutive pings for the same vessel, in \strong{seconds}. Default: 30.}
 
-\item{areas}{A spatial object (sf) containing the area of interest. If \code{NULL}
-(default), the function uses \code{osfd::ices_areas}. Records outside this area
+\item{areas}{A spatial object (sf) containing the area of interest. Records outside this area
 fail the check.}
 
 \item{ports}{A spatial object (sf) containing port locations. If not

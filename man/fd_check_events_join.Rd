@@ -16,7 +16,7 @@ and \code{time}.}
 Must contain \code{.tid}, \code{t1}, and \code{t2}.}
 }
 \value{
-A tibble of the bloated join rows — i.e. only the pings that matched
+A tibble of the bloated join rows -- i.e. only the pings that matched
 more than one event, with all event columns attached. Each such ping appears
 once per matched event. Returns an empty tibble (invisibly) with a message
 when no conflicts exist.
@@ -28,7 +28,7 @@ matched more than one event. Use this before calling \code{fd_add_events()} to
 understand why it errors.
 
 The function is intentionally free-standing and makes no assumptions about
-\emph{why} the conflict arises — it simply surfaces whatever causes the bloat
+\emph{why} the conflict arises -- it simply surfaces whatever causes the bloat
 (overlapping real times, identical dummy windows, soft duplicates, etc.).
 }
 \examples{

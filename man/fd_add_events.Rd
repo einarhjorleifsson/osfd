@@ -4,7 +4,7 @@
 \alias{fd_add_events}
 \title{Add Fishing Event Information to Vessel Tracking Data}
 \usage{
-fd_add_events(ais, events)
+fd_add_events(ais, events, resolve = FALSE)
 }
 \arguments{
 \item{ais}{A data frame of vessel tracking positions after
@@ -15,6 +15,15 @@ fd_add_events(ais, events)
 \code{\link{fd_events}} (and typically filtered by
 \code{\link{fd_flag_events}}). Must contain \code{.tid}, \code{t1} (POSIXct), and
 \code{t2} (POSIXct).}
+
+\item{resolve}{Logical. If \code{FALSE} (default), the function stops with an
+error when a ping matches more than one event. If \code{TRUE}, attempts to
+resolve dummy-time conflicts automatically before joining: for each
+\verb{.tid x date} group that contains multiple dummy events (\code{.tsrc == "dummy"}), only the event with the highest \code{LE_KG_TOT} is kept; the first
+record (by \code{.eid}) is taken on ties. Non-dummy events are never dropped. A
+message reports how many events were removed. If a conflict persists after
+resolution (i.e. it involves real, non-dummy windows), the function still
+errors.}
 }
 \value{
 \code{ais} with all columns from \code{events} appended. Pings outside any
@@ -33,20 +42,26 @@ adds \code{.tid} to the \code{ais} data frame.
 The join is keyed on \code{.tid} (internal trip identifier) and
 \code{dplyr::between(time, t1, t2)}. The intended relationship is many-to-one:
 each ping should fall within at most one event window per trip. If any ping
-matches more than one event — because event windows overlap or share identical
-dummy times (\code{t1 = 00:01}, \code{t2 = 23:59}) — the row count of \code{ais} increases
+matches more than one event -- because event windows overlap or share identical
+dummy times (\code{t1 = 00:01}, \code{t2 = 23:59}) -- the row count of \code{ais} increases
 and the function stops with an informative error.
 
 Use \code{\link{fd_check_events_join}} to diagnose which pings and windows
-are responsible before re-running.
+are responsible, or set \code{resolve = TRUE} to apply automatic resolution for
+dummy-time conflicts (see the \code{resolve} parameter above).
 
 Note that \code{t1} and \code{t2} in the events table are derived by
 \code{\link{fd_clean_eflalo}}: when real start/end times (\code{LE_STIME}/
 \code{LE_ETIME}) are absent, both are set to synthetic placeholder values
 (\code{00:01} and \code{23:59} on the catch date, \code{.tsrc = "dummy"}). These dummy
 windows span the full day and will match every ping recorded on that date for
-the trip — a valid approximation when events are unique per day, but a source
+the trip -- a valid approximation when events are unique per day, but a source
 of many-to-many conflicts when multiple events share the same date.
+
+The \code{resolve = TRUE} conflict-resolution strategy mirrors the fallback step
+of the \code{trip_assign()} function in the ICES data-call workflow: when event
+metadata cannot be assigned by time window alone, \code{LE_KG_TOT} is used as a
+tiebreaker.
 }
 \examples{
 \dontrun{
@@ -54,9 +69,14 @@ ais2 <- ais |>
   fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |>
   fd_add_events(events)
 
-# If fd_add_events() errors, diagnose with:
-conflicts <- fd_check_events_join(ais2_pre, events)
-conflicts |> dplyr::count(.tid, t1, t2, sort = TRUE)
+# If fd_add_events() errors due to dummy-time conflicts, resolve automatically:
+ais2 <- ais |>
+  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |>
+  fd_add_events(events, resolve = TRUE)
+
+# Or diagnose first:
+conflicts <- fd_check_events_join(ais_with_trips, events)
+conflicts |> dplyr::count(.tid, date, sort = TRUE)
 }
 
 }

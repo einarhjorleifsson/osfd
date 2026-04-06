@@ -66,3 +66,46 @@ fd_step_time <- function(datetime, weight = c(1, 0), fill_na = TRUE) {
 
   return(intv)
 }
+
+#' Ping interval in seconds, with an upper cap
+#'
+#' @description
+#' Computes the time interval (in seconds) between consecutive pings via
+#' [fd_step_time()], then caps any value that exceeds the `probs` quantile of
+#' the computed intervals.
+#'
+#' **Chronological order and grouping are the responsibility of the caller.**
+#' Call this function inside [dplyr::mutate()] after [dplyr::group_by()] on
+#' the trip identifier.
+#'
+#' @param time A POSIXct datetime vector, sorted chronologically within any
+#'   potential groups.
+#' @param probs Numeric scalar in `[0, 1]`. The quantile of the computed
+#'   intervals used as the upper cap. Default `0.975`.
+#'
+#' @return A numeric vector of ping intervals (seconds), the same length as
+#'   `time`, with values capped at the `probs` quantile.
+#'
+#' @examples
+#' \dontrun{
+#' ais |>
+#'   dplyr::group_by(.tid) |>
+#'   dplyr::mutate(.intv = fd_interval_seconds(time)) |>
+#'   dplyr::ungroup()
+#'
+#' # Use 99th percentile as the cap
+#' ais |>
+#'   dplyr::group_by(.tid) |>
+#'   dplyr::mutate(.intv = fd_interval_seconds(time, probs = 0.99)) |>
+#'   dplyr::ungroup()
+#' }
+#'
+#' @export
+fd_interval_seconds <- function(time, probs = 0.975) {
+
+  dt_sec <- fd_step_time(time)
+  max_seconds <- stats::quantile(dt_sec, probs = probs, na.rm = TRUE)
+  dt_sec <- ifelse(dt_sec > max_seconds, max_seconds, dt_sec)
+
+  return(dt_sec)
+}
