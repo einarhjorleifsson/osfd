@@ -1,5 +1,9 @@
 ---
 title: "The ICESrectangle zone-A bug"
+vignette: >
+  %\VignetteIndexEntry{The ICESrectangle zone-A bug}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, include = FALSE}

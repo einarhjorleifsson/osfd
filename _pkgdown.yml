@@ -1,0 +1,107 @@
+url: https://einarhjorleifsson.github.io/osfd
+
+template:
+  bootstrap: 5
+
+home:
+  title: "osfd — Spatial Fisheries Data Tools"
+  description: >
+    A consolidation of functions for the ICES WGSFD VMS and logbook data-call
+    workflow: pre-processing, QC flagging, VMS–logbook linking, swept area, and
+    catch distribution.
+
+navbar:
+  structure:
+    left:  [intro, reference, articles, news]
+    right: [search, github]
+  components:
+    github:
+      icon: fab fa-github fa-lg
+      href: https://github.com/einarhjorleifsson/osfd
+
+articles:
+  - title: "Background"
+    desc: >
+      Motivation, design decisions, and how osfd compares to the
+      official ICES datacall scripts.
+    contents:
+      - articles/osfd_vs_datacall
+
+  - title: "Technical documentation"
+    desc: >
+      In-depth explanations of individual workflow steps.
+    contents:
+      - articles/technical_merging
+      - articles/ices-rectangle-bug
+
+reference:
+  - title: "Pre-processing"
+    desc: "Clean and validate raw TACSAT and EFLALO data."
+    contents:
+      - fd_check_input
+      - fd_clean_tacsat
+      - fd_clean_eflalo
+      - fd_revert_tacsat
+      - fd_revert_eflalo
+
+  - title: "QC flagging"
+    desc: >
+      Label or remove records that fail quality checks. All functions accept a
+      `no_hands` argument: `FALSE` retains all rows with a `.checks` column for
+      inspection; `TRUE` (default) filters to passing rows only.
+    contents:
+      - fd_flag_tacsat
+      - fd_flag_trips
+      - fd_flag_events
+      - fd_flag_eflalo
+
+  - title: "Trip and event decomposition"
+    desc: "Extract the trips and events sub-tables from a cleaned eflalo data frame."
+    contents:
+      - fd_trips
+      - fd_events
+      - fd_tidy_eflalo
+
+  - title: "Ping enrichment"
+    desc: "Join trip and event information onto VMS pings."
+    contents:
+      - fd_add_trips
+      - fd_add_events
+      - fd_check_events_join
+
+  - title: "Vessel state"
+    desc: "Classify pings as fishing or steaming."
+    contents:
+      - fd_add_state
+
+  - title: "Gear width and swept area"
+    desc: "Predict gear contact width and calculate swept area per ping."
+    contents:
+      - fd_benthis_lookup
+      - fd_add_gearwidth
+      - fd_add_sa
+
+  - title: "Spatial utilities"
+    desc: "C-square encoding, decoding, area, and spatial joins."
+    contents:
+      - fd_calc_csq
+      - csq2lonlat
+      - csq_area
+      - fd_add_sf
+
+  - title: "Time utilities"
+    desc: "Ping interval calculation."
+    contents:
+      - fd_step_time
+      - fd_interval_seconds
+
+  - title: "Utilities"
+    desc: "Column name translation, spatial helpers, and datasets."
+    contents:
+      - fd_translate
+      - d2ir
+      - fd_dictionary
+      - harbours
+      - eflalo
+      - tacsat
+      - ICESrectangle

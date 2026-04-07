@@ -1,5 +1,9 @@
 ---
 title: "Merging EFLALO and TACSAT: Technical Documentation"
+vignette: >
+  %\VignetteIndexEntry{Merging EFLALO and TACSAT: Technical Documentation}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r, include = FALSE}
@@ -142,7 +146,7 @@ making all columns simultaneously unambiguous and drawn from the same source row
 
 ### Cases the Process Does Not Handle Correctly
 
-The setup chunk below is required for all three runnable examples.
+The setup chunk below is required for all four runnable examples.
 
 ```r
 library(dplyr)
@@ -151,8 +155,7 @@ library(data.table)
 # Custom NOT-IN operator (defined in 0_global.R)
 '%!in%' <- function(x, y) !('%in%'(x, y))
 
-# trip_assign is defined in 0_global.R — source it before running these examples:
-# source("path/to/0_global.R")
+source("_R/trip_assign.R")
 ```
 
 ---
@@ -172,22 +175,19 @@ eflalo_c1 <- tribble(
   "T01",   "09/03/2024", "GNS",    "41H0",    200
 )
 
-# TACSAT: three pings on 09/03, coarse match (Step 6) gave first eflalo row.
+# TACSAT: three pings on 09/03, coarse match (Step 6) gave LE_GEAR.
+# SI_DATIM is included so pings are distinct and survive unique() in ta_pass1.
 tacsatp_c1 <- tribble(
-  ~FT_REF, ~SI_DATE,     ~VE_REF, ~LE_GEAR, ~LE_RECT,
-  "T01",   "09/03/2024", "V01",   "OTB",    "41G9",
-  "T01",   "09/03/2024", "V01",   "OTB",    "41G9",
-  "T01",   "09/03/2024", "V01",   "OTB",    "41G9"
+  ~FT_REF, ~SI_DATE,     ~VE_REF, ~LE_GEAR, ~SI_DATIM,
+  "T01",   "09/03/2024", "V01",   "OTB",    as.POSIXct("2024-03-09 06:00", tz = "UTC"),
+  "T01",   "09/03/2024", "V01",   "OTB",    as.POSIXct("2024-03-09 09:00", tz = "UTC"),
+  "T01",   "09/03/2024", "V01",   "OTB",    as.POSIXct("2024-03-09 12:00", tz = "UTC")
 )
 
 # Step 7 — trip_assign for LE_GEAR
 # Day 09/03 has OTB and GNS → ambiguous → all pings NA after Pass 1 → Pass 3.
 # Trip total: OTB = 800, GNS = 200 → OTB wins.
 result_gear <- trip_assign(tacsatp_c1, eflalo_c1, col = "LE_GEAR", haul_logbook = FALSE)
-result_gear |> select(FT_REF, SI_DATE, LE_GEAR)
-# All three pings: LE_GEAR = OTB
-
-# Splice back
 tacsatp_c1 <- rbindlist(
   list(tacsatp_c1[tacsatp_c1$FT_REF %!in% result_gear$FT_REF, ], result_gear),
   fill = TRUE
@@ -197,11 +197,21 @@ tacsatp_c1 <- rbindlist(
 # Day 09/03 has 41G9 and 41H0 → ambiguous → all pings NA after Pass 1 → Pass 3.
 # Trip total: 41G9 = 800, 41H0 = 200 → 41G9 wins.
 result_rect <- trip_assign(tacsatp_c1, eflalo_c1, col = "LE_RECT", haul_logbook = FALSE)
-result_rect |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
-# All three pings: LE_GEAR = OTB, LE_RECT = 41G9
-#
+tacsatp_c1 <- rbindlist(
+  list(tacsatp_c1[tacsatp_c1$FT_REF %!in% result_rect$FT_REF, ], result_rect),
+  fill = TRUE
+)
+
+# Final output — all three pings assigned OTB / 41G9.
 # The combination (GNS, 41H0) — 200 kg, a real logbook event — is never
 # assigned to any ping. It is permanently absent from the output.
+tacsatp_c1 |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
+#> # A tibble: 3 × 4
+#>   FT_REF SI_DATE    LE_GEAR LE_RECT
+#>   <chr>  <chr>      <chr>   <chr>
+#> 1 T01    09/03/2024 OTB     41G9    # gear via Pass 3 (OTB 800 > GNS 200); rect via Pass 3 (41G9 800 > 41H0 200)
+#> 2 T01    09/03/2024 OTB     41G9    # GNS/41H0 event (200 kg) never assigned to any ping ✗
+#> 3 T01    09/03/2024 OTB     41G9
 ```
 
 ---
@@ -226,19 +236,16 @@ eflalo_c2 <- tribble(
 )
 
 # TACSAT: two pings on 05/03 (OTB day). No pings on 06/03 (e.g., port day).
-# Coarse match (Step 6) gave first eflalo row values: OTB / 41G9.
+# Coarse match (Step 6) gave first eflalo row values: OTB.
 tacsatp_c2 <- tribble(
-  ~FT_REF, ~SI_DATE,     ~VE_REF, ~LE_GEAR, ~LE_RECT,
-  "T02",   "05/03/2024", "V01",   "OTB",    "41G9",
-  "T02",   "05/03/2024", "V01",   "OTB",    "41G9"
+  ~FT_REF, ~SI_DATE,     ~VE_REF, ~LE_GEAR, ~SI_DATIM,
+  "T02",   "05/03/2024", "V01",   "OTB",    as.POSIXct("2024-03-05 08:00", tz = "UTC"),
+  "T02",   "05/03/2024", "V01",   "OTB",    as.POSIXct("2024-03-05 11:00", tz = "UTC")
 )
 
 # Step 7 — trip_assign for LE_GEAR
 # Day 05/03: only OTB → unambiguous → OTB assigned via Pass 1. Correct.
 result_gear2 <- trip_assign(tacsatp_c2, eflalo_c2, col = "LE_GEAR", haul_logbook = FALSE)
-result_gear2 |> select(FT_REF, SI_DATE, LE_GEAR)
-# Both pings: LE_GEAR = OTB  ✓
-
 tacsatp_c2 <- rbindlist(
   list(tacsatp_c2[tacsatp_c2$FT_REF %!in% result_gear2$FT_REF, ], result_gear2),
   fill = TRUE
@@ -250,12 +257,21 @@ tacsatp_c2 <- rbindlist(
 # 41H0 wins — driven entirely by GNS activity on 06/03.
 # OTB never visited 41H0 in the logbook.
 result_rect2 <- trip_assign(tacsatp_c2, eflalo_c2, col = "LE_RECT", haul_logbook = FALSE)
-result_rect2 |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
-# Both pings: LE_GEAR = OTB, LE_RECT = 41H0
-#
+tacsatp_c2 <- rbindlist(
+  list(tacsatp_c2[tacsatp_c2$FT_REF %!in% result_rect2$FT_REF, ], result_rect2),
+  fill = TRUE
+)
+
+# Final output — both pings assigned OTB / 41H0.
 # LE_RECT = 41H0 is a phantom: no logbook row records OTB in 41H0.
-# The assignment was driven by GNS catch on a different day inflating 41H0's
-# trip-level total in the independent Pass 3 aggregation for LE_RECT.
+# The assignment was driven by GNS catch on 06/03 inflating 41H0's trip-level
+# total in the independent Pass 3 aggregation for LE_RECT.
+tacsatp_c2 |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
+#> # A tibble: 2 × 4
+#>   FT_REF SI_DATE    LE_GEAR LE_RECT
+#>   <chr>  <chr>      <chr>   <chr>
+#> 1 T02    05/03/2024 OTB     41H0    # gear via Pass 1 ✓; rect via Pass 3 ✗ (phantom: OTB never in 41H0)
+#> 2 T02    05/03/2024 OTB     41H0
 ```
 
 ---
@@ -280,19 +296,16 @@ eflalo_c3 <- tribble(
   "T03",   "08/03/2024", "GNS",    "41G9",    400
 )
 
-# TACSAT: two pings on 07/03. Coarse match gave first eflalo row: OTB / 41H0.
+# TACSAT: two pings on 07/03. Coarse match gave first eflalo row: OTB.
 tacsatp_c3 <- tribble(
-  ~FT_REF, ~SI_DATE,     ~VE_REF, ~LE_GEAR, ~LE_RECT,
-  "T03",   "07/03/2024", "V01",   "OTB",    "41H0",
-  "T03",   "07/03/2024", "V01",   "OTB",    "41H0"
+  ~FT_REF, ~SI_DATE,     ~VE_REF, ~LE_GEAR, ~SI_DATIM,
+  "T03",   "07/03/2024", "V01",   "OTB",    as.POSIXct("2024-03-07 08:00", tz = "UTC"),
+  "T03",   "07/03/2024", "V01",   "OTB",    as.POSIXct("2024-03-07 11:00", tz = "UTC")
 )
 
 # Step 7 — trip_assign for LE_GEAR
-# Day 07/03: only OTB → unambiguous → OTB via Pass 1.  Correct.
+# Day 07/03: only OTB → unambiguous → OTB via Pass 1. Correct.
 result_gear3 <- trip_assign(tacsatp_c3, eflalo_c3, col = "LE_GEAR", haul_logbook = FALSE)
-result_gear3 |> select(FT_REF, SI_DATE, LE_GEAR)
-# Both pings: LE_GEAR = OTB  ✓
-
 tacsatp_c3 <- rbindlist(
   list(tacsatp_c3[tacsatp_c3$FT_REF %!in% result_gear3$FT_REF, ], result_gear3),
   fill = TRUE
@@ -304,14 +317,195 @@ tacsatp_c3 <- rbindlist(
 # 41G9 wins — but the 400 kg contribution comes from GNS on 08/03,
 # not from OTB on 07/03. Within day 07/03, OTB's dominant rectangle was 41H0.
 result_rect3 <- trip_assign(tacsatp_c3, eflalo_c3, col = "LE_RECT", haul_logbook = FALSE)
-result_rect3 |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
-# Both pings: LE_GEAR = OTB, LE_RECT = 41G9
-#
+tacsatp_c3 <- rbindlist(
+  list(tacsatp_c3[tacsatp_c3$FT_REF %!in% result_rect3$FT_REF, ], result_rect3),
+  fill = TRUE
+)
+
+# Final output — both pings assigned OTB / 41G9.
 # LE_RECT = 41G9 is not a phantom (OTB did visit 41G9 on 07/03, 200 kg),
 # but it is the wrong choice: 41H0 was the higher-catch OTB rectangle that day.
 # The 41G9 assignment was driven by GNS catch on 08/03 contaminating the
 # trip-level aggregation used in the independent Pass 3 call for LE_RECT.
+tacsatp_c3 |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
+#> # A tibble: 2 × 4
+#>   FT_REF SI_DATE    LE_GEAR LE_RECT
+#>   <chr>  <chr>      <chr>   <chr>
+#> 1 T03    07/03/2024 OTB     41G9    # gear via Pass 1 ✓; rect via Pass 3 ✗ (41H0 was dominant OTB rect that day)
+#> 2 T03    07/03/2024 OTB     41G9
 ```
+
+---
+
+#### Case 4 — Duplicate pings from mixed resolved/unresolved days
+
+When a trip spans multiple days and at least one day is ambiguous while another
+is unambiguous, `ta_pass3` collects **all pings from any trip that contains a
+NA ping** (`filter(FT_REF %in% ft_ref_isna)`), not just the unresolved pings.
+This means pings that Pass 1 already resolved correctly end up in both:
+
+- `tz`, where `filter(!is.na(get(col)))` retains them, and
+- `tz2`, where the trip-level filter picks them up again and overwrites their
+  value with the Pass 3 fallback.
+
+The final `rbind(tz, tz2)` then duplicates those pings, inflating the ping
+count silently. This is [open issue #52](https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call/issues/52)
+in the ICES datacall repository.
+
+```r
+# EFLALO: trip T04, two days.
+#   Day 01/01: OTB (2 kg) and OTM (10 kg) — two gears, ambiguous.
+#   Day 02/01: OTM (1 kg) only — unambiguous; Pass 1 can resolve this day.
+eflalo_c4 <- tribble(
+  ~FT_REF,     ~LE_CDAT,     ~LE_GEAR, ~LE_KG_ABK,
+  "XXX1TRIP", "01/01/2000", "OTB",     2,
+  "XXX1TRIP", "01/01/2000", "OTM",    10,
+  "XXX1TRIP", "02/01/2000", "OTM",     1
+)
+
+# TACSAT: two pings, one per day.
+# SI_DATIM included so pings are distinct through unique() in ta_pass1.
+tacsat_c4 <- tribble(
+  ~FT_REF,     ~SI_DATE,     ~SI_DATIM,
+  "XXX1TRIP", "01/01/2000", as.POSIXct("2000-01-01 05:52", tz = "GMT"),
+  "XXX1TRIP", "02/01/2000", as.POSIXct("2000-01-02 14:00", tz = "GMT")
+)
+
+# Step 7 — trip_assign for LE_GEAR.
+# Pass 1: day 01/01 is ambiguous (OTB + OTM) → ping 1 = NA.
+#         day 02/01 is unambiguous (OTM only) → ping 2 = OTM.
+# Pass 3: ft_ref_isna = "XXX1TRIP"; tz2 collects ALL pings of that trip
+#         (both ping 1 and ping 2), not just the NA ping.
+#         OTM wins (2+1=3 vs OTB=2) → both tz2 pings assigned OTM.
+# rbind(tz, tz2): tz = {ping 2, OTM}; tz2 = {ping 1, OTM} + {ping 2, OTM}
+# → ping 2 (02/01/2000) appears twice.
+result_c4 <- trip_assign(tacsat_c4, eflalo_c4, col = "LE_GEAR", haul_logbook = FALSE)
+result_c4 |> select(FT_REF, SI_DATE, LE_GEAR)
+#> # A tibble: 3 × 3
+#>   FT_REF   SI_DATE    LE_GEAR
+#>   <chr>    <chr>      <chr>
+#> 1 XXX1TRIP 02/01/2000 OTM     # ping 2: retained from Pass 1
+#> 2 XXX1TRIP 01/01/2000 OTM     # ping 1: resolved by Pass 3 ✓
+#> 3 XXX1TRIP 02/01/2000 OTM     # ping 2: duplicated by Pass 3 ✗
+```
+
+Input was 2 pings; output is 3 rows. Any subsequent weighting or catch
+distribution using this table will over-count the duplicated ping and produce
+incorrect spatial distributions.
+
+---
+
+#### Case 5 — Duplication survives sequential column processing
+
+The `trip_assign` + splice-and-replace pattern is called once per column
+(`LE_GEAR`, `LE_MSZ`, `LE_RECT`, `LE_MET`, …). Once a trip's pings are
+duplicated by the Case 4 mechanism, those duplicates are spliced back into
+`tacsatp` before the next column is processed. The `unique()` call inside
+`ta_pass1` collapses duplicate rows *that receive the same resolved value* from
+Pass 1, so the inflation does not compound — but it also does not disappear.
+Each column call re-produces the same inflated row count, and the final
+`tacsatp` (with all columns assigned) retains the extra rows. Any downstream
+catch distribution or CPUE calculation then assigns double proportional weight
+to the duplicated ping.
+
+```r
+# Same trip as Case 4, now with LE_RECT also varying.
+#   Day 01/01: OTB/41G9 (2 kg) and OTM/41H0 (10 kg)  — ambiguous for both columns
+#   Day 02/01: OTM/41H0 (1 kg)                        — unambiguous for both columns
+eflalo_c5 <- tribble(
+  ~FT_REF,     ~LE_CDAT,     ~LE_GEAR, ~LE_RECT, ~LE_KG_ABK,
+  "XXX1TRIP", "01/01/2000", "OTB",    "41G9",    2,
+  "XXX1TRIP", "01/01/2000", "OTM",    "41H0",   10,
+  "XXX1TRIP", "02/01/2000", "OTM",    "41H0",    1
+)
+
+tacsat_c5 <- tribble(
+  ~FT_REF,     ~SI_DATE,     ~SI_DATIM,
+  "XXX1TRIP", "01/01/2000", as.POSIXct("2000-01-01 05:52", tz = "GMT"),
+  "XXX1TRIP", "02/01/2000", as.POSIXct("2000-01-02 14:00", tz = "GMT")
+)
+
+# Step 7 — trip_assign for LE_GEAR (Case 4 pattern: 2 pings → 3 rows)
+r_gear5 <- trip_assign(tacsat_c5, eflalo_c5, col = "LE_GEAR", haul_logbook = FALSE)
+tacsat_c5 <- rbindlist(
+  list(tacsat_c5[tacsat_c5$FT_REF %!in% r_gear5$FT_REF, ], r_gear5), fill = TRUE
+)
+
+# Step 7 — trip_assign for LE_RECT (operates on the already-inflated 3-row table)
+# ta_pass1 collapses the two identical 02/01 rows via unique() before Pass 3,
+# so the LE_RECT call does not further increase the row count — but it also
+# does not repair the duplication: Pass 3 re-inflates back to 3 rows.
+r_rect5 <- trip_assign(tacsat_c5, eflalo_c5, col = "LE_RECT", haul_logbook = FALSE)
+tacsat_c5 <- rbindlist(
+  list(tacsat_c5[tacsat_c5$FT_REF %!in% r_rect5$FT_REF, ], r_rect5), fill = TRUE
+)
+
+tacsat_c5 |> select(FT_REF, SI_DATE, LE_GEAR, LE_RECT)
+#> # A data.table: 3 × 4
+#>    FT_REF   SI_DATE    LE_GEAR LE_RECT
+#>    <chr>    <chr>      <chr>   <chr>
+#> 1: XXX1TRIP 02/01/2000 OTM     41H0    # ping 2: retained from Pass 1 for both columns
+#> 2: XXX1TRIP 02/01/2000 OTM     41H0    # ping 2: duplicated — will receive double catch weight ✗
+#> 3: XXX1TRIP 01/01/2000 OTM     41H0    # ping 1: resolved by Pass 3 for both columns
+```
+
+The output looks well-formed — both columns are populated, no `NA`s — but
+it contains 3 rows from 2 original pings. The duplication is silent and
+carries through to all subsequent steps.
+
+---
+
+#### Case 6 — Transit-day pings: duplication with contradictory values
+
+The Case 4 duplication fires whenever *any* ping in a trip is left `NA` after
+Pass 1. This includes pings on **transit days** — dates that fall within the
+trip window but have no corresponding logbook entry (the vessel was steaming,
+not fishing). Pass 1 cannot match such pings to a logbook date, so they remain
+`NA`, triggering the Pass 3 collection of all trip pings.
+
+Unlike Case 4, where all passes assigned the same value (OTM on both days),
+here the two resolved days have *different* values (OTB on day 1, OTM on day
+3). Pass 3 overwrites the day-1 pings in `tz2` with the trip-dominant OTM,
+producing a row with **the wrong gear** alongside the correctly resolved one.
+
+```r
+# EFLALO: two fishing events — day 1 (OTB) and day 3 (OTM). No entry for day 2.
+eflalo_c6 <- tribble(
+  ~FT_REF, ~LE_CDAT,     ~LE_GEAR, ~LE_KG_ABK,
+  "T06",   "01/01/2000", "OTB",     200,
+  "T06",   "03/01/2000", "OTM",     500
+)
+
+# TACSAT: three pings — fishing day 1, transit day 2, fishing day 3.
+tacsat_c6 <- tribble(
+  ~FT_REF, ~SI_DATE,     ~SI_DATIM,
+  "T06",   "01/01/2000", as.POSIXct("2000-01-01 08:00", tz = "GMT"),
+  "T06",   "02/01/2000", as.POSIXct("2000-01-02 12:00", tz = "GMT"),
+  "T06",   "03/01/2000", as.POSIXct("2000-01-03 08:00", tz = "GMT")
+)
+
+# Step 7 — trip_assign for LE_GEAR
+# Pass 1: day 1 → OTB (unambiguous); day 2 → NA (no logbook entry); day 3 → OTM.
+# Pass 3: ft_ref_isna = "T06" → collects all 3 pings into tz2.
+#         OTM wins (500 > 200) → tz2 assigns OTM to all 3.
+# tz (non-NA): {ping1-OTB, ping3-OTM}
+# rbind(tz, tz2): 2 + 3 = 5 rows.
+result_c6 <- trip_assign(tacsat_c6, eflalo_c6, col = "LE_GEAR", haul_logbook = FALSE)
+result_c6 |> select(FT_REF, SI_DATE, LE_GEAR)
+#> # A tibble: 5 × 3
+#>   FT_REF SI_DATE    LE_GEAR
+#>   <chr>  <chr>      <chr>
+#> 1 T06    01/01/2000 OTB     # ping 1: retained from Pass 1 ✓ (correct gear)
+#> 2 T06    03/01/2000 OTM     # ping 3: retained from Pass 1 ✓ (correct gear)
+#> 3 T06    01/01/2000 OTM     # ping 1: duplicated by Pass 3 ✗ (wrong gear: OTB → OTM)
+#> 4 T06    02/01/2000 OTM     # ping 2 (transit): resolved by Pass 3 ✓
+#> 5 T06    03/01/2000 OTM     # ping 3: duplicated by Pass 3 ✗ (correct value, extra row)
+```
+
+Three original pings produce five rows. Ping 1 appears twice with
+**contradictory gear values** (OTB and OTM); ping 3 is duplicated with the
+correct value. Any catch assigned to ping 1 will appear under both OTB and OTM
+in the output tables.
 
 ---
 

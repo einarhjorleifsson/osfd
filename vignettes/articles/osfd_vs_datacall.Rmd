@@ -1,0 +1,288 @@
+---
+title: "osfd vs. the official ICES datacall scripts"
+vignette: >
+  %\VignetteIndexEntry{osfd vs. the official ICES datacall scripts}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse  = TRUE,
+  comment   = "#>",
+  message   = FALSE,
+  warning   = FALSE,
+  eval      = FALSE   # most code blocks are illustration only
+)
+```
+
+## Overview
+
+The official ICES VMS and Logbook Data Call workflow
+(<https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call>) is distributed as
+four standalone R scripts (`0_global.R`, `1_eflalo_tacsat_preprocessing.R`,
+`2_eflalo_tacsat_analysis.R`, `3_data_submission.R`) that analysts copy and
+adapt for their national datasets.
+
+**osfd** pursues the same end goal — producing spatially explicit effort and
+catch distributions from VMS and logbook data — but takes a different
+architectural path: a documented R package with consistent function interfaces,
+leaving the analyst's script as a thin workflow driver rather than a
+customisation target.
+
+### Code size
+
+The table below summarises non-blank, non-comment lines in each codebase.
+"Roxygen" is counted separately because those lines are
+documentation, not executable code.
+
+```{r loc-table, eval = TRUE, echo = FALSE}
+loc <- data.frame(
+  Source = c(
+    "osfd `R/`",
+    "ICES datacall scripts"
+  ),
+  `Total lines` = c(2525, 3382),
+  `Blank`       = c(181,  724),
+  Roxygen       = c(1465, 224),
+  Comments      = c(82,   497),
+  `Code lines`  = c(797,  1937),
+  check.names   = FALSE
+)
+knitr::kable(loc)
+```
+
+The ICES scripts contain roughly **2.4× more executable code** than the osfd
+package source. Most of the overhead comes from inline QC tracking
+(`remrecsTacsat`, `remrecsEflalo` matrices), year-loop boilerplate, file I/O,
+and the activity-detection block. The osfd package instead moves that logic
+inside documented functions, so the analyst's script stays short — the
+pre-processing stage in `README.Rmd` fits in about 15 lines.
+
+---
+
+## Key differences
+
+### 1 — Package vs. scripts
+
+The datacall scripts are designed to be **copied and edited**. Each analyst
+embeds their national configuration (threshold values, paths, gear lists) in
+`0_global.R` and modifies the downstream scripts as needed. This is
+practical for a multi-country submission process but makes upgrading to a
+new version of the workflow a manual diff exercise.
+
+osfd is an **R package**. Configuration is passed as function arguments; the
+analyst's script calls documented functions with known inputs and outputs.
+Upgrading means `remotes::install_github()`.
+
+### 2 — Data model: monolithic eflalo vs. trips + events
+
+The datacall scripts keep eflalo as a single, wide data frame throughout.
+Vessel/trip-level attributes (departure time, arrival time, vessel length, engine
+power) sit in the same row as gear/rectangle/date/catch columns, and the
+same row is duplicated for every gear × date × rectangle combination within a
+trip. All QC is applied to this monolithic structure.
+
+osfd **decomposes** eflalo at the start:
+
+```{r decompose}
+eflalo_clean <- eflalo |> fd_clean_eflalo()
+
+trips  <- eflalo_clean |> fd_trips()   # one row per trip
+events <- eflalo_clean |> fd_events()  # one row per gear × date × rectangle
+```
+
+This makes trip-level checks (overlapping departure/arrival windows) and
+event-level checks (gear validity, time-within-trip) independent of each
+other. `fd_flag_eflalo()` orchestrates both and then applies the two
+cross-level checks that need the full structure (catch date outside trip
+window).
+
+### 3 — Column naming
+
+The datacall scripts use ICES ALLCAPS column names throughout
+(`SI_LATI`, `FT_DDATIM`, `LE_GEAR`, …). osfd translates these to short
+lowercase names immediately after loading:
+
+| Raw ICES name | osfd name |
+|---|---|
+| `VE_REF` | `vid` |
+| `SI_LATI` / `SI_LONG` | `lat` / `lon` |
+| `FT_DDATIM` / `FT_LDATIM` | `T1` / `T2` |
+| `LE_GEAR` | `gear` |
+| `LE_RECT` | `ir` |
+
+The original names are restored by `fd_revert_tacsat()` / `fd_revert_eflalo()`
+for anything that still expects the legacy format (e.g. `vmstools::mergeEflalo2Tacsat()`).
+
+### 4 — QC flagging: inline filtering vs. diagnostic/production modes
+
+The datacall scripts filter records immediately when a check fails, then
+record how many rows were removed in the `remrecsTacsat` / `remrecsEflalo`
+matrices:
+
+```r
+# Datacall pattern — check and remove in one step
+tacsat <- tacsat[lengths(overs) > 0, ]
+remrecsTacsat["outsideICESarea", ] <- c(nrow(tacsat), percentage_remaining)
+```
+
+osfd separates **inspection** from **filtering** through the `no_hands`
+parameter available on all four `fd_flag_*` functions:
+
+```{r no-hands}
+# Inspect failures before deciding what to remove
+ais <- tacsat |>
+  fd_clean_tacsat() |>
+  fd_flag_tacsat(areas = areas, ports = ports, no_hands = FALSE)
+
+ais |> count(.checks, sort = TRUE)
+
+# Then filter manually — or set no_hands = TRUE to filter automatically
+ais <- filter(ais, .checks == "ok") |> select(-.checks)
+```
+
+The `.checks` column carries a self-describing label (`"01 outside ICES area"`,
+`"04 harbour ping"`, …) rather than a row count. This makes it easier to
+examine failures in context before discarding records.
+
+### 5 — VMS–logbook linking
+
+The datacall scripts use `vmstools::mergeEflalo2Tacsat()` to assign a trip
+identifier to each VMS ping. The function loops over vessels, binary-searches
+the sorted trip table per vessel, then does a second loop and a `pmatch()` for
+within-trip attribute assignment, followed by `trip_assign()` for pings
+that fall on multi-gear or multi-rectangle trips. The full merge + enrichment
+block runs to roughly 60 lines in `2_eflalo_tacsat_analysis.R`.
+
+osfd uses dplyr's native **interval join** throughout:
+
+```{r add-trips}
+ais2 <- ais |>
+  fd_add_trips(trips, cn = c("tid", "length", "kw", "gt", ".tid")) |>
+  fd_add_events(events)
+```
+
+`fd_add_trips()` uses `join_by(cid, vid, between(time, T1, T2))` to assign
+the trip identifier in a single pass. `fd_add_events()` then links each ping to
+its logbook event using the more precise `between(time, t1, t2)` window derived
+from `LE_STIME`/`LE_ETIME`, or a day-wide dummy window when those fields are
+absent. Both functions include row-count guards that catch overlapping trip
+windows or conflicting event windows before they silently inflate the data.
+
+### 6 — Activity classification
+
+The datacall scripts use a **mixture-model** approach (`mixtools`-backed
+`ac.tac.anal()` / `act.tac()` from vmstools) for gears listed in
+`autoDetectionGears`, and a speed-threshold lookup for the remainder. The
+mixture model fits a bimodal (or tri-modal) Gaussian to the vessel speed
+distribution to locate the fishing and steaming peaks automatically, with
+analyst visual inspection to confirm the result. This is sophisticated but
+requires `vmstools`, `mixtools`, and a manual review step.
+
+osfd uses a simple speed-threshold join via `fd_add_state()`:
+
+```{r state}
+state_lookup <- read_parquet("gear_mapping.parquet") |>
+  select(gear, target, s1, s2)
+
+ais2 <- ais2 |>
+  fd_add_state(state_lookup) |>
+  filter(state == "fishing")
+```
+
+The lookup table is expected to be pre-built — by the analyst, using the
+mixture model or any other method — and supplied as a plain data frame. The
+separation keeps the classification logic out of the package and lets the
+analyst use whatever method they trust.
+
+### 7 — Catch distribution
+
+The datacall scripts use `vmstools::splitAmongPings()` to distribute logbook
+catch proportionally across fishing pings, dispatching at the most fine-grained
+available level (trip × day × ICES rectangle → trip → vessel → fleet) with a
+`conserve` option that retains catches from trips without VMS coverage.
+
+The osfd equivalent (`fd_split_among_pings()`) is the primary outstanding work
+item. The design is documented in `_articles/catch-distribution.Rmd`; the
+interface will use the `trips`/`events` decomposition described above rather
+than the monolithic eflalo data frame.
+
+---
+
+## Dependencies
+
+```{r deps-table, eval = TRUE, echo = FALSE}
+deps <- data.frame(
+  Package     = c("dplyr / tidyr / lubridate", "sf", "data.table", "vmstools",
+                  "doBy", "mixtools", "sfdSAR", "icesVMS", "icesVocab"),
+  `datacall`  = c("✓", "✓", "✓", "✓ (core)", "✓", "✓", "✓", "✓", "✓"),
+  `osfd`      = c("✓ (core imports)", "✓ (core import)", "—", "— (optional via revert)",
+                  "—", "—", "✓ (suggested)", "✓ (suggested)", "✓ (suggested)"),
+  check.names = FALSE
+)
+knitr::kable(deps)
+```
+
+The datacall workflow requires `vmstools` for `mergeEflalo2Tacsat()`,
+`splitAmongPings()`, `sfsortTacsat()`, `intervalTacsat()`, and the activity
+detection functions. `data.table` is used extensively for the overlap-trip and
+catch-split logic. osfd drops both hard dependencies: the interval join replaces
+`mergeEflalo2Tacsat()`, and `fd_calc_csq()` replaces `vmstools::CSquare()`
+with a dbplyr-compatible implementation.
+
+---
+
+## What the analyst sees
+
+The table below compares the user-facing code for the pre-processing stage
+(the most developed part of osfd at this point).
+
+**Datacall** (`1_eflalo_tacsat_preprocessing.R`, simplified):
+
+```r
+# Year loop
+for (year in yearsToSubmit) {
+  load(paste0(dataPath, "tacsat_", year, ".RData"))
+  load(paste0(dataPath, "eflalo_", year, ".RData"))
+  tacsat <- formatTacsat(tacsat)
+  eflalo <- formatEflalo(eflalo)
+
+  # TACSAT checks — inline filter + matrix tracking
+  remrecsTacsat["total", ] <- c(nrow(tacsat), "100%")
+  overs  <- sf::st_intersects(tacsat_sf, ices_areas_sf)
+  tacsat <- tacsat[lengths(overs) > 0, ]
+  remrecsTacsat["outsideICESarea", ] <- c(nrow(tacsat), ...)
+  tacsat$unique_id <- paste(tacsat$VE_REF, ...)
+  tacsat <- tacsat[!duplicated(tacsat$unique_id), ]
+  # ... ~150 more lines for tacsat + eflalo checks ...
+  save(tacsat, file = paste0(outPath, "cleanTacsat", year, ".RData"))
+  save(eflalo, file = paste0(outPath, "cleanEflalo", year, ".RData"))
+}
+```
+
+**osfd** (`README.Rmd`):
+
+```r
+ais <- tacsat |>
+  fd_clean_tacsat() |>
+  fd_flag_tacsat(areas = areas, ports = ports, no_hands = TRUE)
+
+eflalo_clean <- eflalo |> fd_clean_eflalo()
+
+trips <- eflalo_clean |>
+  fd_trips() |>
+  fd_flag_trips(no_hands = TRUE)
+
+events <- eflalo_clean |>
+  fd_events() |>
+  fd_flag_events(no_hands = TRUE,
+                 gear = icesVocab::getCodeList("GearType")$Key,
+                 met6  = icesVocab::getCodeList("Metier6_FishingActivity")$Key)
+```
+
+The osfd version processes all years in a single pass (assuming the data are
+read in together), requires no intermediate file I/O, and expresses the full
+pre-processing in 15 lines. The datacall version offers more granular per-year
+audit trails and is closer to the format required for national submission
+reports; those are valid trade-offs depending on the analyst's needs.
