@@ -106,10 +106,12 @@ d2ir <- function(lon, lat, sub = FALSE) {
 #' (Rees, 2005).
 #'
 #' The implementation uses only `floor()`, `abs()`, `round()`, integer
-#' arithmetic, `paste0()`, and `as.character()` / `as.integer()` — all of
-#' which translate to SQL — so the function is compatible with
-#' [dplyr::mutate()] on both in-memory data frames **and** lazy remote tables
-#' backed by DuckDB / `duckdbfs`.
+#' arithmetic, `paste0()`, and `as.character()` / `as.integer()`. Despite each
+#' of those primitives having a SQL analogue, `fd_calc_csq()` is an R function
+#' and **cannot** be called inside [dplyr::mutate()] on a lazy DuckDB /
+#' `duckdbfs` table — DuckDB will error because the function is not registered
+#' as a SQL scalar function. For DuckDB-compatible spatial gridding at a single
+#' resolution, use the midpoint formula (`lon %/% dx * dx + dx/2`) inline.
 #'
 #' The global quadrant encoding follows the WMO convention: 1 = NE, 3 = SE,
 #' 5 = SW, 7 = NW.  Intermediate quadrant digits (1–4) encode whether the

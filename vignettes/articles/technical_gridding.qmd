@@ -1,0 +1,414 @@
+---
+title: "Do we still need c-squares?"
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment  = "#>",
+  fig.width  = 7,
+  fig.height = 5,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+## The question
+
+The ICES VMS and Logbook Data Call requires catch and effort to be submitted
+as gridded summaries, with each grid cell identified by a c-square code at
+0.05° resolution — a 14-character string such as `"7500:104:100:1"`. This has
+been the format since the data call was established, and it has been used
+without much question ever since.
+
+It is worth asking whether this is still the right choice, or whether it is
+simply the choice that was made and never revisited.
+
+This document argues that, for all intermediate analytical steps of the VMS
+workflow, c-squares should be replaced by a simpler numeric midpoint encoding.
+C-square codes should be generated only at the final submission step — as a
+thin formatting layer applied to an already-aggregated result — if and when
+the data call continues to require them. The case rests on four points: the
+tool was designed for something else entirely, its boundary behaviour is
+asymmetric, implementations disagree, and it is dramatically slower than
+the alternative. A fifth point, addressed at the end, is that the data call
+is heading toward a world in which the performance argument becomes not merely
+inconvenient but untenable.
+
+## Square peg, round hole: what c-squares were designed for
+
+C-squares were proposed by Rees (2003) as a **metadata** spatial indexing
+system — a compact text-based way to describe the geographic footprint of an
+oceanographic dataset, so that catalogue records could be searched with nothing
+more than a string prefix query. The motivating examples in the original paper
+are indexing bird sightings and National Park extents for catalogue-level
+discovery. It is therefore something of a surprise to find the format applied
+to tens of millions of individual VMS pings per year.
+
+The specification is candid about the intended scale. It recommends "a
+resolution of at least 1 × 1 degree squares" for creators wishing to guarantee
+interoperability with distributed c-squares search. Finer resolutions are
+permitted, but the spec flags them as a resource concern: cell counts increase
+by ×4 or ×25 with each decrease in resolution, "either requiring an equivalent
+increase in computing resources or possibly slower addressing times."
+
+The ICES VMS data call uses **0.05°** — four levels deep in the c-squares
+hierarchy, and 400 times finer than the recommended interoperability floor.
+This is a subtlety that appears not to have received much attention when the
+data call format was chosen.
+
+## The boundary problem
+
+C-squares encode coordinates using a hierarchical scheme built around the
+global quadrant system (NE, SE, SW, NW). This quadrant structure forces an
+asymmetric boundary convention. The specification (v1.1, §9.3) states:
+
+> Points "on the line" are normally encoded within the next "higher" square,
+> i.e. further away from the global origin. A point at +10 latitude will be
+> encoded within the ten degree square covering +10 to +20, not 0 to +10; a
+> point at −10 latitude will be encoded within the ten degree square covering
+> −10 to −20, not 0 to −10.
+
+In plain terms: boundary points go to the cell with the **larger absolute
+coordinate value**, regardless of sign. The consequence is that cell intervals
+are left-closed in the positive half-plane and right-closed in the negative
+half-plane:
+
+- `[0.00, 0.05)`, `[0.05, 0.10)`, … (positive)
+- `(−0.10, −0.05]`, `(−0.05, 0.00]`, … (negative)
+
+This is different from a standard raster or `cut()`, which uses left-closed
+intervals everywhere. Two positions separated by 0.000001° — one exactly on a
+boundary, one just inside the next cell — land in different c-squares:
+
+```{r setup}
+library(osfd)
+library(csquares)
+library(tidyverse)
+library(ggmisc)  #pak::pak("einarhjorleifsson/ggmisc")
+```
+
+```{r boundary-demo}
+lons <- c(-0.05, -0.049999)
+lats <- c(-0.005, -0.005)
+
+fd_calc_csq(lons, lats, degrees = 0.05)
+```
+
+Plotted on a grid, the asymmetry is immediately visible. Each point below is
+coloured by its c-square code; grid lines are drawn at multiples of 0.05°.
+Points at `lon = −0.05` belong to the cell whose centre is at `−0.075`, not
+`−0.025`. The grid lines do not split the cells they appear to delineate,
+because the boundary convention flips direction at zero.
+
+```{r asymmetric-plot, fig.cap = "Points coloured by c-square code near the origin. Grid lines mark cell boundaries (multiples of 0.05°). Because the boundary convention flips at zero, grid lines do not bisect the coloured bands they appear to separate."}
+dx <- dy <- 0.05
+x1 <- y1 <- -0.10
+x2 <- y2 <-  0.10
+
+g <-
+  expand_grid(
+    lon = seq(x1, x2, by = 0.01),
+    lat = seq(y1, y2, by = 0.01)
+  ) |>
+  mutate(cs = fd_calc_csq(lon, lat, dx))
+
+ggplot() +
+  theme_grey() +
+  geom_vline(xintercept = seq(x1, x2, by = dx), colour = "grey60") +
+  geom_hline(yintercept = seq(y1, y2, by = dy), colour = "grey60") +
+  geom_point(data = g, aes(lon, lat, colour = cs), size = 3.5) +
+  ggmisc::scale_colour_crayola() +
+  scale_x_continuous(breaks = seq(x1, x2, by = dx)) +
+  scale_y_continuous(breaks = seq(y1, y2, by = dy)) +
+  coord_equal() +
+  theme(legend.position = "bottom",
+        legend.text = element_text(size = 6))
+```
+
+### Cell count inconsistency near the origin
+
+The asymmetry has a concrete consequence when data straddles the global
+origin — which the North Atlantic, the main theatre of EU VMS activity,
+conspicuously does. This was first documented for the midpoint formula vs.
+c-squares in a [2025 blog post](https://heima.hafro.is/~einarhj/fishydata/ramb/2025-06-18_on_gridding).
+
+Consider 10,000 synthetic pings on a regular 0.001° grid spanning −0.05° to
++0.05° in both dimensions. This region contains exactly four 0.05° cells in a
+symmetric 2×2 arrangement, so any sensible method should produce four cells
+with 2,500 counts each:
+
+```{r cell-counts}
+dx <- 0.05
+g_orig <- expand_grid(
+  lon = seq(-0.05, 0.0499, by = 0.001),
+  lat = seq(-0.05, 0.0499, by = 0.001)
+) |>
+  mutate(cs    = fd_calc_csq(lon, lat, dx),
+         x_mid = lon %/% dx * dx + dx/2,
+         y_mid = lat %/% dx * dx + dx/2)
+
+csq_ll <- csq2lonlat(g_orig$cs, degrees = dx)
+g_orig <- g_orig |>
+  mutate(x_csq = csq_ll$lon,
+         y_csq = csq_ll$lat)
+
+cat("Midpoint — 4 balanced cells:\n")
+g_orig |> count(lon = x_mid, lat = y_mid) |> as.data.frame()
+```
+
+```{r cell-counts-csq}
+cat("C-square centroids — 9 cells:\n")
+g_orig |> count(lon = x_csq, lat = y_csq) |> as.data.frame()
+```
+
+The midpoint formula delivers four balanced cells. C-squares produces
+**nine**, scattering the 100 boundary pings into five additional fringe cells
+centred at ±0.075°. The counts range from 1 to 2,500.
+
+```{r cell-count-plot, fig.cap = "Ping counts per cell: midpoint (left) vs c-squares (right). The heavy lines mark the prime meridian and equator. Midpoint produces a symmetric 2×2 grid; c-squares fragments the same data into 9 cells."}
+bind_rows(
+  g_orig |> count(lon = x_mid, lat = y_mid) |> mutate(method = "midpoint"),
+  g_orig |> count(lon = x_csq, lat = y_csq) |> mutate(method = "c-squares")
+) |>
+  filter(between(lon, -0.11, 0.11), between(lat, -0.11, 0.11)) |>
+  ggplot(aes(lon, lat, fill = factor(n))) +
+  theme_bw() +
+  geom_tile(width = dx, height = dx, colour = "grey70") +
+  scale_fill_brewer(palette = "Set1") +
+  geom_hline(yintercept = 0, linewidth = 1.2) +
+  geom_vline(xintercept = 0, linewidth = 1.2) +
+  facet_wrap(~method) +
+  labs(x = "Longitude", y = "Latitude", fill = "Count") +
+  coord_equal()
+```
+
+To be clear: this is not a bug in `fd_calc_csq()`. It faithfully implements
+the specification. The specification just happens to produce a result that
+would surprise anyone expecting a standard raster.
+
+## Three implementations, two conventions
+
+If the specification were unambiguous, one would expect independent
+implementations to agree. Consider the same two boundary positions as before:
+
+```{r csquares-comparison}
+as_csquares_lh <- function(lon, lat, dx) {
+  matrix(c(lon, lat), ncol = 2) |>
+    csquares::as_csquares(resolution = dx) |>
+    pull(csquares) |>
+    as.character()
+}
+
+data.frame(
+  lon          = lons,
+  lat          = lats,
+  fd_calc_csq  = fd_calc_csq(lons, lats, 0.05),
+  as_csquares  = as_csquares_lh(lons, lats, 0.05)
+)
+```
+
+`fd_calc_csq()` and `vmstools::CSquare()` both implement the spec's
+"away from origin" rule and produce identical results. `csquares::as_csquares()`
+goes the other way at boundary points. Three independent implementations of a
+14-page specification have arrived at two distinct conventions. This is,
+at minimum, a sign that the format does not lend itself to straightforward
+implementation.
+
+For interior points all three agree, and GPS positions rarely fall exactly on
+a 0.05° boundary, so the practical impact on any given dataset is small. The
+point is not that maps will be noticeably wrong — it is that the format
+introduces complexity and ambiguity in exchange for no analytical benefit.
+
+## The performance penalty
+
+C-squares encode coordinates by recursively extracting digits from the absolute
+value of each coordinate and assembling them into a string. At 0.05° that is
+a 14-character string assembled by four levels of `paste0()`. A typical
+Icelandic fleet VMS dataset — around 1 million pings — gives a sense of the
+cost:
+
+```{r code-size}
+set.seed(6271)
+n <- 1e6
+lon_r <- runif(n, -25, -13)
+lat_r <- runif(n,  63,  67)
+
+csq_vec <- fd_calc_csq(lon_r, lat_r, 0.05)
+mid_lon <- lon_r %/% 0.05 * 0.05 + 0.025
+mid_lat <- lat_r %/% 0.05 * 0.05 + 0.025
+
+cat("C-square vector (1M rows):", format(lobstr::obj_size(csq_vec)), "\n")
+cat("Two midpoint vectors:     ", format(lobstr::obj_size(mid_lon, mid_lat)), "\n")
+```
+
+R interns repeated strings efficiently, so memory is not the main concern
+here. The practical issues are:
+
+- **Encoding speed.** Multi-level integer arithmetic and `paste0()` versus a
+  single vectorised arithmetic expression.
+- **Grouping and joining.** String hash-tables are slower than numeric ones.
+  For large aggregations — `count(csq)`, `group_by(csq) |> summarise(...)` —
+  the difference is noticeable.
+- **DuckDB and Arrow incompatibility.** The midpoint formula translates
+  directly to SQL arithmetic and works on any lazy table. `fd_calc_csq()` is
+  an R function and cannot be called inside a DuckDB query.
+- **Raster interoperability.** Midpoint coordinates slot directly into
+  `stars`, `terra`, and any raster pipeline. C-square strings require a
+  decode step.
+
+Putting numbers to the first point:
+
+```{r encode-bench}
+library(bench)
+library(vmstools)
+
+d_bench <- tibble(lon = lon_r, lat = lat_r)
+
+enc_bench <- bench::mark(
+  midpoint         = d_bench |>
+    mutate(x = lon %/% dx * dx + dx/2, y = lat %/% dx * dx + dx/2),
+  fd_calc_csq      = d_bench |>
+    mutate(cs = fd_calc_csq(lon, lat, dx)),
+  vmstools_CSquare = d_bench |>
+    mutate(cs = vmstools::CSquare(lon = lon, lat = lat, degrees = dx)),
+  check = FALSE,
+  min_iterations = 3L
+)
+data.frame(
+  expression = as.character(enc_bench$expression),
+  min        = format(enc_bench$min),
+  median     = format(enc_bench$median),
+  mem_alloc  = format(enc_bench$mem_alloc)
+)
+```
+
+Roughly 200 times slower than the midpoint formula, and 500 times slower than
+that for `vmstools::CSquare()`. Memory allocation follows a similar pattern.
+Two hundred times slower is, by most standards, a fairly compelling argument.
+
+The aggregation picture is similar. When the goal is a gridded summary — count,
+catch, or effort per cell — DuckDB can push both encoding and the group-by
+into a single in-memory query. For c-squares there is no such path:
+
+```{r agg-bench}
+library(duckdb)
+
+con <- dbConnect(duckdb())
+duckdb_register(con, "pings", d_bench)
+q <- tbl(con, "pings")
+
+agg_bench <- bench::mark(
+  r_midpoint  = d_bench |>
+    mutate(x = lon %/% dx * dx + dx/2, y = lat %/% dx * dx + dx/2) |>
+    count(x, y),
+  r_csq       = d_bench |>
+    mutate(cs = fd_calc_csq(lon, lat, dx)) |>
+    count(cs),
+  db_midpoint = q |>
+    mutate(x = lon %/% dx * dx + dx/2, y = lat %/% dx * dx + dx/2) |>
+    count(x, y) |>
+    collect(),
+  check = FALSE,
+  min_iterations = 3L
+)
+data.frame(
+  expression = as.character(agg_bench$expression),
+  min        = format(agg_bench$min),
+  median     = format(agg_bench$median),
+  mem_alloc  = format(agg_bench$mem_alloc)
+)
+dbDisconnect(con)
+```
+
+DuckDB encodes and aggregates 1 million pings to a gridded count while
+allocating almost no R memory — the computation stays inside the DuckDB
+process and only the result table comes back. The c-square workflow has no
+equivalent; `r_csq` is the only option available.
+
+### The coming data volume problem
+
+The EU VMS regulation currently mandates a minimum ping frequency of two hours.
+At that rate, a fleet of 1,000 vessels generates roughly 12,000 pings per day —
+a volume that most modern hardware handles without breaking a sweat, even with
+the c-square overhead.
+
+This will not remain the situation for long. AIS data — already collected by
+coastal states and increasingly integrated into fisheries monitoring — operates
+on a fundamentally different scale. AIS transponders typically transmit every
+few seconds when under way; even aggregated to one-minute resolution, a fleet
+of 1,000 vessels generates around 1.4 million pings per day, roughly 120 times
+the VMS volume. Aggregated to national or pan-European scale, annual AIS
+datasets run into the billions of rows.
+
+At that scale the 200× encoding penalty becomes genuinely prohibitive. DuckDB
+and Arrow are not optional extras in a billion-row workflow — they are
+necessities. And as shown above, c-squares do not work inside either.
+
+The data call will, sooner or later, need to accommodate AIS. When it does, the
+question of whether to continue using a metadata indexing format designed for
+catalogue search — at a resolution 400 times finer than its own spec recommends,
+processed at 200 times the cost of the alternative — will answer itself.
+
+## The alternative: one line of arithmetic
+
+For any fixed resolution `dx`, the midpoint of the cell containing coordinate
+`x` is:
+
+```r
+x_mid <- x %/% dx * dx + dx / 2
+```
+
+The `%/%` operator truncates toward negative infinity (floor semantics),
+giving a **left-closed, right-open** interval at every coordinate regardless
+of sign:
+
+```{r midpoint-demo}
+dx <- 0.05
+lons_test <- c(-0.10, -0.09, -0.05, -0.049999, 0.0, 0.049999, 0.05, 0.10)
+
+data.frame(
+  lon      = lons_test,
+  midpoint = lons_test %/% dx * dx + dx / 2,
+  csq      = fd_calc_csq(lons_test, rep(0.025, length(lons_test)), dx)
+)
+```
+
+`lon = −0.05` and `lon = −0.049999` share the same midpoint; `fd_calc_csq()`
+assigns them to different cells. The formula requires no string construction,
+no hierarchical encoding, no lookup table, and no external package. It works
+identically in R, dplyr, Arrow, and DuckDB. It produces a symmetric raster at
+every coordinate.
+
+The one thing it cannot do is produce a c-square code. For the intermediate
+steps of a VMS workflow — binning pings, aggregating catch, computing swept
+area, joining to raster habitat layers — this is not a limitation. For the
+final submission to ICES, it currently is. The appropriate response is to
+generate c-square codes at the very last step, from the already-aggregated
+result table, where the number of rows is a few thousand grid cells rather
+than millions of individual pings, and the encoding cost is negligible.
+
+## Summary
+
+| | `fd_calc_csq` | `vmstools::CSquare` | `csquares::as_csquares` | midpoint |
+|---|:---:|:---:|:---:|:---:|
+| Spec-compliant boundary | ✓ | ✓ | ✗ | n/a |
+| Consistent with standard raster | ✗ | ✗ | ✗ | ✓ |
+| DuckDB / Arrow compatible | ✗ | ✗ | ✗ | ✓ |
+| Multi-resolution nesting | ✓ | ✓ | ✓ | ✗ |
+| No boundary ambiguity | ✗ | ✗ | ✗ | ✓ |
+| Relative encoding speed | ~200× | ~500× | — | 1× |
+| Viable at AIS frequency | ✗ | ✗ | ✗ | ✓ |
+
+The recommendation is to use the midpoint formula throughout the analytical
+pipeline and reserve c-square encoding for the submission output step, where
+it adds negligible cost.
+
+If the data call were being designed today, with AIS on the horizon and DuckDB
+on the desktop, one suspects the format choice would be different.
+
+## References
+
+Rees, T. (2003). "C-squares, a new spatial indexing system and its
+applicability to the description of oceanographic datasets." *Oceanography*,
+16(1), 11–19. <https://www.cmar.csiro.au/csquares/spec1-1.htm>

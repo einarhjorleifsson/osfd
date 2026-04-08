@@ -256,7 +256,7 @@ An orchestrating wrapper — does not re-implement any check logic itself. Inste
 Encodes decimal-degree coordinates as a c-square code (c-squares spec v1.1, Rees 2005).
 - Supports all standard resolutions: `10`, `5`, `1`, `0.5`, `0.1`, `0.05`, `0.01`
 - Returns `NA_character_` for `NA` inputs
-- **dbplyr-compatible**: uses only `floor()`, `abs()`, `round()`, integer arithmetic, `paste0()`, `as.integer()` / `as.character()` — all translate to SQL. Works inside `dplyr::mutate()` on lazy DuckDB / `duckdbfs` tables.
+- **R-only**: despite using primitives (`floor()`, `abs()`, `paste0()`, etc.) that each have SQL analogues, `fd_calc_csq()` is an R function and **cannot** be called inside `dplyr::mutate()` on a lazy DuckDB / `duckdbfs` table — DuckDB will error with "Scalar Function with name fd_calc_csq does not exist". For DuckDB-compatible spatial gridding, use the midpoint formula (`lon %/% dx * dx + dx/2`) inline.
 - ~2× faster and uses ~65% less memory than the vmstools `CSquare()` it replaces (no intermediate 3D array)
 
 ### `csq2lonlat(csq, degrees = 0.05)`
@@ -496,6 +496,7 @@ Active vignettes live under `vignettes/articles/`:
 | `technical_clean-and-flag.Rmd` | Walkthrough of `fd_clean_*` and `fd_flag_*` functions |
 | `technical_merging.Rmd` | Merging EFLALO and TACSAT: technical documentation |
 | `ices-rectangle-bug.Rmd` | Documents the ICES rectangle zone-A coordinate bug |
+| `technical_gridding.qmd` | C-squares vs. midpoint gridding: boundary behaviour, performance benchmarks, and AIS-scale considerations |
 
 Draft / scratch articles live under `_articles/` (not built as package vignettes):
 
@@ -566,3 +567,5 @@ No test files exist yet. The `tests/testthat/` directory is empty.
 - [x] Case 4 added to `vignettes/articles/technical_merging.Rmd`: demonstrates the duplication bug in `ta_pass3()` (ICES datacall [issue #52](https://github.com/ices-eg/ICES-VMS-and-Logbook-Data-Call/issues/52)). When a trip has a mix of ambiguous and unambiguous days, `ta_pass3` collects all pings from any trip with a NA ping (not just the NA pings), causing resolved pings to appear in both `tz` and `tz2`; the final `rbind(tz, tz2)` duplicates them. A minimal tribble (4 columns eflalo, 3 columns tacsat) reproduces the 2-ping → 3-row inflation. Bug documented as a comment above `ta_pass3()` in `_R/trip_assign.R`; function code left unchanged.
 - [x] Case 5 added to `vignettes/articles/technical_merging.Rmd`: shows that the Case 4 duplication survives sequential column processing (`LE_GEAR` then `LE_RECT`). The `unique()` call inside `ta_pass1` collapses inherited duplicates before Pass 3 re-inflates, so the row count does not compound — but it is never repaired. The final `tacsatp` retains the inflated count regardless of how many columns are processed.
 - [x] Case 6 added to `vignettes/articles/technical_merging.Rmd`: demonstrates that the Pass 3 duplication bug also fires on **transit-day pings** (pings within the trip window with no matching logbook date). With 3 pings across fishing day 1, transit day 2, and fishing day 3, Pass 3 produces 5 rows. Ping 1 appears twice with **contradictory gear values** (OTB from Pass 1 and OTM from Pass 3 overwrite), making this more severe than Case 4.
+- [x] `vignettes/articles/technical_gridding.qmd` created: argues against using c-squares for individual ping encoding in the data call pipeline. Five sections: (1) the question; (2) c-squares were designed as ≥1° catalogue metadata, not for 50M pings/year at 0.05°; (3) asymmetric boundary behaviour (left-closed positive, right-closed negative — 9 cells vs. 4 expected near zero); (4) performance penalty (200× slower than midpoint formula on 1M rows, no DuckDB/Arrow compatibility); (5) coming AIS volume problem (~120× more pings at minute-level frequency makes c-square overhead prohibitive and DuckDB/Arrow transition mandatory). Recommendation: use midpoint encoding throughout the pipeline; generate c-square codes only at the final submission step as a thin formatting layer on the aggregated result (few thousand rows, negligible cost).
+- [x] `R/geo.R` roxygen docs for `fd_calc_csq()` corrected: removed false claim of dbplyr-compatibility; now explicitly states the function cannot be called inside `dplyr::mutate()` on a lazy DuckDB/`duckdbfs` table, and directs users to the midpoint formula for DuckDB-compatible gridding.

@@ -49,7 +49,7 @@ Codes A4 through A9 do not exist.
 
 ## The bug in `ICESrectangle()`
 
-The `ICESrectangle()` function from `vmstools` (widely used in the ICES data
+The `vmstools::ICESrectangle()` function (used in the ICES SFD data
 call processing chain) incorrectly extends zone A all the way to **-50°W** and
 applies the same 10° modular arithmetic it uses for every other zone. For the
 actual ICES area (within -44° to -40°), this produces digit offsets of 6–9

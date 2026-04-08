@@ -25,10 +25,12 @@ user-specified resolution. Based on the c-squares specification v1.1
 }
 \details{
 The implementation uses only \code{floor()}, \code{abs()}, \code{round()}, integer
-arithmetic, \code{paste0()}, and \code{as.character()} / \code{as.integer()} — all of
-which translate to SQL — so the function is compatible with
-\code{\link[dplyr:mutate]{dplyr::mutate()}} on both in-memory data frames \strong{and} lazy remote tables
-backed by DuckDB / \code{duckdbfs}.
+arithmetic, \code{paste0()}, and \code{as.character()} / \code{as.integer()}. Despite each
+of those primitives having a SQL analogue, \code{fd_calc_csq()} is an R function
+and \strong{cannot} be called inside \code{\link[dplyr:mutate]{dplyr::mutate()}} on a lazy DuckDB /
+\code{duckdbfs} table — DuckDB will error because the function is not registered
+as a SQL scalar function. For DuckDB-compatible spatial gridding at a single
+resolution, use the midpoint formula (\code{lon \%/\% dx * dx + dx/2}) inline.
 
 The global quadrant encoding follows the WMO convention: 1 = NE, 3 = SE,
 5 = SW, 7 = NW.  Intermediate quadrant digits (1–4) encode whether the
